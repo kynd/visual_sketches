@@ -1,0 +1,206 @@
+---
+import PageLayout from '../layouts/PageLayout.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<PageLayout title="Particle rendering" slug="particle-rendering">
+  <div class="monologue">
+    On screen, a small sphere is a shaded disc. Fake the disc convincingly and a GPU will draw millions of them every frame — until you ask them to cast shadows.
+  </div>
+
+  <div class="prose">
+    <p>
+      All three demos below share one setup. Each particle's position is a pure function of its index and the current time, evaluated in the vertex shader. There is no particle buffer: the CPU uploads nothing per frame, and drawing a million particles is a single draw call whose cost belongs entirely to the GPU. That isolates the question this page asks — how much each rendering technique costs per particle.
+    </p>
+    <div class="page-note">
+      <strong>Positions from an index.</strong> The shader hashes <code>gl_VertexID</code> (or <code>gl_InstanceID</code>) with a PCG hash into four reproducible random numbers, then places the particle in one of three formations: a flattened <em>cloud</em> with differential rotation (inner particles orbit faster), a twisting <em>ring</em>, and a <em>sheet</em> laid out on a grid and displaced by travelling waves. Memory use is the same for 1,000 particles and 16 million.
+      <br /><br />
+      <strong>Lighting.</strong> The spheres use the white studio look from the geom project — key and fill lights, Blinn-Phong specular and a blue Fresnel rim — with the shadow term scaling only the key light.
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="impostors">
+    <div class="demo-header">
+      <h2>Impostor spheres</h2>
+      <a href={`${base}/demos/particles-impostors/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/particles-impostors/index.html?embedded`} title="Impostor spheres" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        An impostor is a flat sprite that passes for a sphere. The fragment shader reads the sprite coordinate {"\\( q \\)"} as a point on a unit disc, discards everything outside it, and lifts the rest onto a hemisphere facing the camera. Lighting that normal is enough for a square of pixels to read as a ball.
+      </p>
+      <div class="math-block">{"\\[ n = \\left(q_x,\\; q_y,\\; \\sqrt{1 - |q|^2}\\right), \\qquad |q| \\le 1 \\]"}</div>
+
+      <div class="subhead">Three ways to submit the same sphere</div>
+      <p>
+        <strong>Point sprites</strong> draw with <code>gl.POINTS</code>: one vertex per particle, which the rasterizer expands into a square of <code>gl_PointSize</code> pixels. Vertex work is as low as it gets. <strong>Instanced quads</strong> draw four vertices per particle with <code>drawArraysInstanced</code>, taking corners from <code>gl_VertexID</code> — four times the vertex work, but no size limit. <strong>Instanced meshes</strong> draw a real icosphere per particle, with true normals and true depth, as the baseline the impostors are trying to beat.
+      </p>
+      <p>
+        Meshes lose for small particles because of how GPUs shade. Fragments run in 2×2 pixel blocks, so a triangle covering one pixel still pays for four, and an 80-triangle sphere a few pixels wide spends most of its time on triangles that barely cover anything. A sprite turns the whole sphere into one or two triangles.
+      </p>
+
+      <div class="subhead">Depth</div>
+      <p>
+        A sprite writes the depth of its flat plane. Where two spheres intersect, the seam comes out as a straight line instead of a curve. <em>Exact depth</em> fixes this by writing <code>gl_FragDepth</code> from the reconstructed surface point — at a price: once a shader writes depth, the GPU can no longer reject hidden fragments before running the shader, so every covered pixel is shaded even if it ends up behind another sphere. At dust size the difference is invisible; with large, dense particles it shows up in both the image and the frame time.
+      </p>
+      <p>
+        Without shadows, a dense cloud flattens into a white silhouette: every visible sphere is lit the same way, so nothing tells the eye which particles sit inside the volume and which sit on its surface. That is what the next two demos add.
+      </p>
+      <div class="page-note">
+        <strong>The approximation.</strong> The hemisphere normal assumes each sphere is seen head-on. Under perspective, a sphere's silhouette grows by a factor of roughly {"\\( 1 + r^2 / 2d^2 \\)"} at distance {"\\( d \\)"}, which is negligible for small particles.
+        <br /><br />
+        <strong>Point size limits.</strong> <code>gl_PointSize</code> is clamped to the range the hardware reports in <code>ALIASED_POINT_SIZE_RANGE</code>. Particles that would be smaller than a pixel are drawn as one full pixel, so distant dust aliases and looks brighter than it should; particles larger than the maximum shrink. Instanced quads have neither problem.
+        <br /><br />
+        <strong>Measuring.</strong> The frame rate is capped by the display's refresh rate, so it can't tell two fast techniques apart. Where the browser exposes <code>EXT_disjoint_timer_query_webgl2</code>, the stats line also shows GPU time per frame, which is the number to compare.
+      </div>
+
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Method</strong> — point sprites, instanced quads, or instanced icosphere meshes. Meshes are capped at 2M instances.</li>
+            <li><strong>Count</strong> — number of particles, in half-octave steps from 1K to 16M.</li>
+            <li><strong>Radius</strong> — sphere radius in world units. The formations span about 2.5 units, so 0.008 is a fine dust and 0.05 is a heap of beads.</li>
+            <li><strong>Formation</strong> — cloud, ring or sheet. The sheet fills a square grid, so its density depends on the count.</li>
+            <li><strong>Speed</strong> — scales the animation clock; 0 freezes motion.</li>
+            <li><strong>Exact depth</strong> — sprites only: writes per-pixel sphere depth with <code>gl_FragDepth</code>, which corrects intersections and disables early depth rejection.</li>
+            <li><strong>Mesh detail</strong> — meshes only: icosphere subdivision level, from 20 to 1280 triangles per sphere.</li>
+            <li><strong>Find max</strong> — starts playback and raises the count by half an octave per second while the frame rate stays at 55 fps or above; it stops one step below the first count that drops under. Pressing it again stops the search.</li>
+            <li><strong>Record</strong> — opens the recorder (see <a href="#recording">Recording</a>).</li>
+            <li><strong>Canvas</strong> — drag to orbit the camera, scroll to zoom. Both work while paused.</li>
+            <li><strong>Stats</strong> (bottom left) — method, particle count, GPU time, and the triangle count for quads and meshes.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="shadow-map">
+    <div class="demo-header">
+      <h2>Shadow-mapped spheres</h2>
+      <a href={`${base}/demos/particles-shadow-map/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/particles-shadow-map/index.html?embedded`} title="Shadow-mapped spheres" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        A shadow needs an answer to one question per lit point: is anything between this point and the light? A shadow map answers it by drawing the particles a second time, from the light's point of view, and keeping only the nearest depth in each texel. In the camera pass, every surface point projects itself into that map and compares its own depth with the stored one. Farther than the stored depth means something blocks the light.
+      </p>
+      <p>
+        Particles make this pass cheap. The depth pass has no lighting and draws each particle as a flat point-sprite disc at its centre depth, so it never writes <code>gl_FragDepth</code> and early depth rejection stays on. The extra cost is one more sweep of vertex work plus a small amount of fill, which is why this technique, unlike the next one, keeps hard, exact, particle-to-particle shadows.
+      </p>
+
+      <div class="subhead">Per pixel or per particle</div>
+      <p>
+        A per-pixel lookup samples the shadow map for every pixel a sphere covers, so a shadow edge can cross the sphere's surface. A per-particle lookup samples once, in the vertex shader, at the sphere's pole facing the light, and passes the result to every pixel of that sprite. For particles a few pixels wide the two images are almost the same, and the per-particle version does a fraction of the texture work.
+      </p>
+      <div class="page-note">
+        <strong>Filtering.</strong> The depth texture is sampled through a <code>sampler2DShadow</code> with linear filtering, so each tap already compares and blends a 2×2 block in hardware. The 3×3 and 5×5 options add taps one texel apart: 9 and 25 lookups, softening edges at a proportional cost.
+        <br /><br />
+        <strong>Bias.</strong> Since the map stores the centre of each disc rather than its curved surface, the camera pass subtracts a bias of {"\\( (0.6\\,r + 0.004) / (\\text{far} - \\text{near}) \\)"} before comparing. Without it, each sphere shadows its own terminator in a speckled band.
+        <br /><br />
+        <strong>Resolution.</strong> The light frustum is a fixed 4.4-unit square, so one texel of a 2048² map is about 0.002 units. A particle smaller than a texel still occupies a whole texel in the map and casts a shadow larger than itself — dense dust over-darkens at low map sizes.
+      </div>
+
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Method, Count, Radius, Formation, Speed</strong> — as in the first demo. The depth pass always uses point sprites; Method applies to the camera pass.</li>
+            <li><strong>Map size</strong> — shadow map resolution, from 512² to 4096².</li>
+            <li><strong>Filter</strong> — percentage-closer filtering kernel: 1, 9 or 25 hardware-filtered taps.</li>
+            <li><strong>Lookup</strong> — per pixel (fragment shader) or per particle (vertex shader) shadow lookup for the spheres. The ground always looks up per pixel.</li>
+            <li><strong>Ground</strong> — shows the shadow-receiving floor.</li>
+            <li><strong>Show map</strong> — draws the shadow map in the bottom-right corner, nearer depths brighter. The inset appears in recordings too.</li>
+            <li><strong>Find max, Record, canvas drag and scroll</strong> — as in the first demo.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="opacity-shadows">
+    <div class="demo-header">
+      <h2>Opacity shadow maps</h2>
+      <a href={`${base}/demos/particles-opacity-shadows/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/particles-opacity-shadows/index.html?embedded`} title="Opacity shadow maps" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        A shadow map's answer is binary: blocked or not. In a cloud of a million specks, no single speck matters — what darkens a point is how much material lies between it and the light, the way smoke or hair dims light gradually. Opacity shadow maps (Kim and Neumann, 2001) store that amount instead of a depth.
+      </p>
+      <p>
+        The light's view is cut into 16 depth slices. In the light pass, each particle adds its coverage to every slice behind it, using additive blending with no depth test. Sixteen slices fit in one pass as four RGBA half-float targets written through multiple render targets. To shade a point, the shader finds the two slices that bracket its depth, interpolates the accumulated coverage {"\\( c \\)"}, and turns it into the fraction of light that gets through:
+      </p>
+      <div class="math-block">{"\\[ T = e^{-k\\,c} \\]"}</div>
+      <p>
+        This technique scales because every part of it is small. The map is 256² by default, so a particle usually touches a single texel in the light pass. Each sphere reads its transmittance once, in the vertex shader, because a speck too small to show a shadow edge only needs one value. The ground reads the map per pixel, and bilinear filtering of the low-resolution map is what makes its shadow soft.
+      </p>
+      <div class="page-note">
+        <strong>Coverage.</strong> A particle whose diameter {"\\( d \\)"} in light-map texels is under one deposits {"\\( \\pi d^2 / 4 \\)"} into a single texel; larger particles fill their disc with 1 per texel. Either way, the total deposited approximates the particle's cross-section, so the result does not depend on map resolution — only its sharpness does.
+        <br /><br />
+        <strong>Self-shadowing.</strong> A particle's own coverage lands in the slices behind it. The lookup steps one slice toward the light so a particle never dims itself; the cost is that occluders within one slice (0.275 units) in front of it are missed.
+        <br /><br />
+        <strong>Precision.</strong> Rendering to float targets needs <code>EXT_color_buffer_float</code>. The slices are 32-bit when the browser also exposes float blending and filtering (<code>EXT_float_blend</code>, <code>OES_texture_float_linear</code>), and 16-bit otherwise; the stats line says which. Half floats stop growing at 512 once small contributions round away, but by then {"\\( e^{-kc} \\)"} is already zero for any useful {"\\( k \\)"}.
+        <br /><br />
+        <strong>What stays lit.</strong> Only the key light is attenuated. Ambient and fill light reach every particle, which is why shadowed particles turn grey rather than black.
+      </div>
+
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Method, Count, Radius, Formation, Speed</strong> — as in the first demo. The light pass always uses point sprites.</li>
+            <li><strong>Map size</strong> — resolution of each of the 16 slices, from 64² to 512². Smaller maps give softer, cheaper shadows.</li>
+            <li><strong>Density</strong> — the absorption factor {"\\( k \\)"}: how much light one full texel of coverage blocks. 0 turns shadows off.</li>
+            <li><strong>Ground</strong> — shows the shadow-receiving floor.</li>
+            <li><strong>Show map</strong> — draws the total coverage seen from the light (the deepest slice) in the bottom-right corner. The inset appears in recordings too.</li>
+            <li><strong>Find max, Record, canvas drag and scroll</strong> — as in the first demo.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="recording">
+    <div class="demo-header">
+      <h2>Recording</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Every demo on this site can record its canvas to video. The recorder relies on one rule all demos follow: each frame is a pure function of time. That lets it skip the clock entirely and render frame {"\\( n \\)"} at {"\\( t = t_0 + n / \\text{fps} \\)"}, however long that frame takes to draw.
+      </p>
+      <p>
+        <strong>Frame-accurate MP4</strong> pauses the demo, renders each frame at its exact time, and hands the canvas to the browser's H.264 encoder (WebCodecs <code>VideoEncoder</code>) with a timestamp of exactly {"\\( n / \\text{fps} \\)"} seconds. A muxer writes the encoded frames into an MP4. A scene that runs at 8 fps live still comes out as a smooth 60 fps video; it just takes longer to record. <strong>Frame-accurate PNG</strong> renders the same frames but saves each as a lossless PNG inside a zip, for compositing or grading elsewhere. <strong>Realtime</strong> captures the canvas as it plays with <code>MediaRecorder</code>; it is instant, but slow frames drop or repeat.
+      </p>
+      <div class="page-note">
+        <strong>MP4 or image sequence.</strong> At 40 Mbps, H.264 of these scenes is visually lossless, and a 10-second 1080p clip stays around 50 MB. A PNG sequence of the same clip is several hundred megabytes, and the browser holds the whole zip in memory until it saves, so it suits short clips. Choose PNG when the frames need further processing; choose MP4 otherwise.
+        <br /><br />
+        <strong>What gets recorded.</strong> Only the WebGL canvas — not the control bar, panels or stats. The <em>Size</em> option renders at 1920×1080 or 3840×2160 even from the embedded 960×540 view, by resizing the drawing buffer for the duration of the recording. Libraries load on first use from jsDelivr: <code>mp4-muxer</code> for MP4 and <code>fflate</code> for zip.
+      </div>
+      <details>
+        <summary>Recorder controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Mode</strong> — frame-accurate MP4, frame-accurate PNG sequence (.zip), or realtime capture (MP4 where the browser supports it, otherwise WebM).</li>
+            <li><strong>Size</strong> — frame-accurate modes only: record at the canvas size, 1920×1080, or 3840×2160.</li>
+            <li><strong>Frame rate</strong> — output frames per second, default 60. In realtime mode this is the capture rate requested from the browser.</li>
+            <li><strong>Duration</strong> — length of the clip in seconds. Realtime recording stops after this long, or earlier on Stop.</li>
+            <li><strong>Start at</strong> — frame-accurate modes only: begin at the demo's current time, or at {"\\( t = 0 \\)"}. Parameter and camera settings at the moment of recording apply throughout.</li>
+            <li><strong>Bitrate</strong> — video bitrate in megabits per second for MP4 and WebM.</li>
+            <li><strong>Start / Cancel / Stop</strong> — starts recording; while running, cancels a frame-accurate recording or stops and saves a realtime one. Progress and render speed show next to the button.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+</PageLayout>

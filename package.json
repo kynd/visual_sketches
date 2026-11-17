@@ -1,0 +1,15 @@
+{
+  "name": "visual-sketches",
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "build:prod": "astro build && rm -rf dist/sketches",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/mdx": "^3.1.9",
+    "astro": "^4.15.0"
+  }
+}
