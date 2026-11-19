@@ -1,9 +1,11 @@
 // Minimal WebGL2 helpers shared by the particle demos: program wrapper,
 // column-major mat4 math, an orbit camera and a GPU timer.
 
-export function createGL(canvas) {
+// alpha: true gives the canvas an alpha channel (premultiplied), so a demo
+// can leave pixels transparent — e.g. with its background turned off.
+export function createGL(canvas, { alpha = false } = {}) {
   const gl = canvas.getContext('webgl2', {
-    antialias: false, alpha: false, depth: true, stencil: false,
+    antialias: false, alpha, depth: true, stencil: false,
     powerPreference: 'high-performance', preserveDrawingBuffer: false,
   });
   if (!gl) throw new Error('WebGL2 is not available in this browser.');

@@ -38,6 +38,10 @@ export const ENV_BY_KEY = Object.fromEntries(ENV_LIST.map(([id, key, label, anim
 export const ALL_ENVS = ENV_LIST.map(e => e[1]);
 
 // Lighting controls. d: defaults for env, shading, lookup, blur, exposure, background.
+// The Background toggle sits above the groups: off leaves everything behind
+// the subject transparent (uBgMode 3), which PNG recordings keep as alpha.
+export const bgSpec = () => ({ id: 'bg', label: 'Background', type: 'toggle', value: true });
+
 export function envSpecs(envs, defaults) {
   const d = { shading: '0', lookup: '0', blur: 0, exposure: 1.2, background: '1', ...defaults };
   return [
@@ -50,7 +54,7 @@ export function envSpecs(envs, defaults) {
     range('occlusion', 'Occlusion', 0, 1, 0.01, 0.5),
     range('rotation', 'Rotation (°/s)', -20, 20, 0.5, 0, 1),
     { id: 'orbit', label: 'Camera orbit', type: 'range', min: 0, max: 120, step: 1, value: 0, format: v => (v > 0 ? `${v} s` : 'Off') },
-    { id: 'background', label: 'Background', type: 'select', value: d.background, options: [['0', 'Environment'], ['1', 'Dimmed'], ['2', 'Black']] },
+    { id: 'background', label: 'Backdrop', type: 'select', value: d.background, options: [['0', 'Environment'], ['1', 'Dimmed'], ['2', 'Black']] },
   ];
 }
 
@@ -88,7 +92,7 @@ export class Environment {
       sunWorld: [c * lx - s * lz, ly, s * lx + c * lz],
       uniforms: {
         uEnvTex: ENV_UNIT, uEnvRot: rot, uBlur: p.blur, uOcclusion: p.occlusion, uExposure: p.exposure,
-        uSunCol: sunCol, uShading: parseInt(p.shading, 10), uLookup: parseInt(p.lookup, 10), uBgMode: parseInt(p.background, 10),
+        uSunCol: sunCol, uShading: parseInt(p.shading, 10), uLookup: parseInt(p.lookup, 10), uBgMode: p.bg === false ? 3 : parseInt(p.background, 10),
       },
     };
   }

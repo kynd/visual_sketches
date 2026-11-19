@@ -68,7 +68,8 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
         <summary>Controls</summary>
         <div class="shape-desc">
           <ul>
-            <li><strong>Environment, Shading, Lookup, Blur, Exposure, Sun strength, Occlusion, Rotation, Camera orbit, Background</strong> — the environment lighting, as on <a href={`${base}/environment-maps#geom`}>Environment maps</a>.</li>
+            <li><strong>Background</strong> (top of the panel) — draws the backdrop. Off leaves every pixel behind the subject transparent, and the floor fades out to transparent rather than into the map; frame-accurate PNG recordings keep that alpha channel for compositing, while MP4 shows it as black.</li>
+            <li><strong>Environment, Shading, Lookup, Blur, Exposure, Sun strength, Occlusion, Rotation, Camera orbit, Backdrop</strong> — the environment lighting, as on <a href={`${base}/environment-maps#geom`}>Environment maps</a>.</li>
             <li><strong>Method, Count, Radius</strong> — sphere drawing method, particle count (4K to 2M) and largest sphere radius.</li>
             <li><strong>Speed</strong> — playback rate of the timeline, spin and animated shapes.</li>
             <li><strong>Shape 1–5</strong> — the shapes to cycle through, in order. Slots 2–5 can be None; with a single shape there is no morph.</li>
@@ -107,8 +108,15 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
       <p>
         A fragment shader draws it by sphere tracing. Each pixel's ray starts where it enters a bounding sphere and steps forward by the distance the field reports, which is always safe for an exact distance. A blend of distances, and an implicit surface's estimate, can overstate the true distance, so every step is shortened to 0.8 of the reported value. The normal is the field's gradient at the hit point, and shading is the same <code>envShade()</code> the particles use.
       </p>
+      <div class="subhead">Rendering methods from geom</div>
+      <p>
+        The hit point can be shaded four ways, each carried over from geom's lighting experiments. <strong>Environment map</strong> is the lighting from the previous page. <strong>Studio</strong> is geom's standard look, the white material used across this site: a key light, a fill light, a Blinn-Phong highlight and a cool Fresnel rim, with the soft shadow taken from the key. <strong>Rim light + SSS</strong> lights only the silhouette, through {"\\( (1 - |n \\cdot v|)^p \\)"} for exponent {"\\( p \\)"}, and leaves faces facing the camera dark. <strong>Flash light</strong> is two lights orbiting the shape at different speeds. In geom, the left and right audio channels set their brightness; here each one flashes on a clock and decays, and the first never goes fully dark.
+      </p>
+      <p>
+        Subsurface scattering in geom is a thickness measurement. From the hit point, a second ray keeps marching through the inside of the shape until the field turns positive again at the back face. Light passes through thin material more easily, so the glow is {"\\( e^{-\\text{thickness} \\times \\text{density}} \\)"}, scaled by <em>SSS strength</em>. Rim light uses it as its only fill; Studio and Flash add it in white, and Environment map in the map's colour along the normal, as geom's environment demo did. Thin sheets such as the gyroid, the box frame and the edges of a morph glow; a sphere's thick middle stays dark.
+      </p>
       <div class="page-note">
-        <strong>Soft shadows.</strong> A shadow ray marches toward the sun through the same field. Instead of a yes/no answer it keeps the smallest ratio {"\\( k\\,d/t \\)"} of distance to travelled length — how narrowly the ray misses the shape — which approximates a penumbra (Inigo Quilez's soft-shadow method). <em>Shadow sharpness</em> is {"\\( k \\)"}. The ground marches a shadow ray too, but only when it passes through the bounding sphere.
+        <strong>Soft shadows.</strong> A shadow ray marches toward the light through the same field: the environment's sun, or the key light in Studio. Rim and flash lighting cast none. Instead of a yes/no answer it keeps the smallest ratio {"\\( k\\,d/t \\)"} of distance to travelled length — how narrowly the ray misses the shape — which approximates a penumbra (Inigo Quilez's soft-shadow method). <em>Shadow sharpness</em> is {"\\( k \\)"}. The ground marches a shadow ray too, but only when it passes through the bounding sphere.
         <br /><br />
         <strong>Ambient occlusion.</strong> Five samples step out along the normal; where the field reports less distance than the step, nearby surface is crowding the point. The result darkens creases and the inside of tunnels.
         <br /><br />
@@ -118,8 +126,14 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
         <summary>Controls</summary>
         <div class="shape-desc">
           <ul>
-            <li><strong>Environment, Shading, Lookup, Blur, Exposure, Sun strength, Occlusion, Rotation, Camera orbit, Background</strong> — the environment lighting, as in the first demo. Occlusion applies to the soft shadow.</li>
+            <li><strong>Environment, Shading, Lookup, Blur, Exposure, Sun strength, Occlusion, Rotation, Camera orbit, Backdrop</strong> — the environment lighting, as in the first demo. Occlusion applies to the soft shadow.</li>
+            <li><strong>Background</strong> — as in the first demo; transparent pixels come out of the ray march directly.</li>
+            <li><strong>Rendering</strong> (top of the panel) — Environment map, Studio, Rim light + SSS, or Flash light.</li>
             <li><strong>Speed, Shape 1–5, Hold, Morph, Shape size, Spin, Tilt</strong> — as in the first demo.</li>
+            <li><strong>Rim exponent</strong> — Rim light only: {"\\( p \\)"}; higher values pull the glow closer to the silhouette.</li>
+            <li><strong>Face-on fill</strong> — Rim light only: brightness of surfaces facing the camera, {"\\( |n \\cdot v|^2 \\)"} times this value.</li>
+            <li><strong>SSS strength, SSS density</strong> — brightness of the thickness glow, and how fast it fades as the material gets thicker. Strength 0 skips the interior march.</li>
+            <li><strong>Flash rate (/s)</strong> — Flash light only: flashes per second of the first light; the second flashes 0.618 times as often.</li>
             <li><strong>March steps</strong> — the most steps a ray may take. Too few leave holes where rays graze a surface.</li>
             <li><strong>Shadow sharpness</strong> — {"\\( k \\)"} in the soft-shadow estimate; higher values give harder shadow edges.</li>
             <li><strong>Ground, Show env map</strong> — the floor and the map inset.</li>

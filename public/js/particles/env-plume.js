@@ -12,7 +12,7 @@ import { ParticleScene, METHOD_LABEL } from './scene.js';
 import { particleShaders, shaderHead } from './glsl.js';
 import { flowShaders } from './flow-glsl.js';
 import { ENV_SHADING, backgroundShaders, envGroundShaders, envInsetShaders } from './env-glsl.js';
-import { CAM_YAW, ENV_UNIT, Environment, envSpecs } from './env-common.js';
+import { CAM_YAW, Environment, envSpecs, bgSpec } from './env-common.js';
 import { POS_W, positionTargets, shadowTargets, methodSpec, countSpec, radiusSpec, speedSpec, range } from './flow-demo.js';
 import { mountShell } from '../demo-shell.js';
 
@@ -32,7 +32,7 @@ for (const x of [-1.6, 1.6]) for (const z of [-1.6, 1.6]) BOUNDS.push([x, 2.6, z
 // closed: panel groups that start collapsed ('Lighting', 'Particles', 'Shadows', or kernel.group).
 export function mountEnvParticles({ title, recordName, envs, defaults, kernel, closed = [] }) {
   const canvas = document.getElementById('canvas');
-  const gl = createGL(canvas);
+  const gl = createGL(canvas, { alpha: true });
   const scene = new ParticleScene(gl);
   const flowTimer = new GpuTimer(gl);
   const drawTimer = new GpuTimer(gl);
@@ -115,12 +115,15 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
     // Pass 3 — camera: background, ground, spheres.
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, p.bg ? 1 : 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, sm.tex);
-    gl.disable(gl.DEPTH_TEST);
-    bgProg.use().setAll(U);
-    scene.drawQuad();
+    if (p.bg) {
+      gl.disable(gl.DEPTH_TEST);
+      bgProg.use().setAll(U);
+      scene.drawQuad();
+    }
     gl.enable(gl.DEPTH_TEST);
     if (p.ground) {
       groundProg.use().setAll(U);
@@ -153,6 +156,7 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
   shell = mountShell({
     title, recordName, render, findMax: { id: 'count' },
     panel: [
+      bgSpec(),
       { type: 'group', label: 'Lighting', open: !closed.includes('Lighting') },
       ...envSpecs(envs, defaults),
       { type: 'group', label: 'Particles', open: !closed.includes('Particles') },

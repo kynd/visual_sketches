@@ -372,7 +372,7 @@ uniform float uExposure;
 uniform vec3  uSunCol;      // shadow-casting light colour × strength (linear)
 uniform int   uShading;     // 0 paint, 1 light, 2 mirror
 uniform int   uLookup;      // 0 normal, 1 reflection
-uniform int   uBgMode;      // 0 environment, 1 dimmed, 2 black
+uniform int   uBgMode;      // 0 environment, 1 dimmed, 2 black, 3 none (transparent)
 
 vec3 envSample(vec3 d, float lod) {
   float c = cos(uEnvRot), s = sin(uEnvRot);
@@ -382,7 +382,7 @@ vec3 envSample(vec3 d, float lod) {
 }
 
 vec3 envBackground(vec3 rd) {
-  if (uBgMode == 2) return vec3(0.0);
+  if (uBgMode >= 2) return vec3(0.0);
   return envSample(rd, 0.0) * (uBgMode == 1 ? 0.05 : 1.0);
 }
 
@@ -445,7 +445,12 @@ void main() {
   float sh = shadowMapLookup(vWorld);
   vec3 sky = envSample(vec3(0.0, 1.0, 0.0), 0.0);    // the zenith, as the land in the map uses
   vec3 col = 0.3 * (sky * mix(1.0, sh, uOcclusion) + max(uKeyDir.y, 0.0) * sh * uSunCol);
-  col = mix(col, envBackground(rd), smoothstep(uGroundHalf * 0.35, uGroundHalf, length(vWorld.xz)));
+  float fade = smoothstep(uGroundHalf * 0.35, uGroundHalf, length(vWorld.xz));
+  if (uBgMode == 3) {                                  // no background: fade to transparent (premultiplied)
+    fragColor = vec4(envOutput(col) * (1.0 - fade), 1.0 - fade);
+    return;
+  }
+  col = mix(col, envBackground(rd), fade);
   fragColor = vec4(envOutput(col), 1.0);
 }`;
   return { vs, fs };
