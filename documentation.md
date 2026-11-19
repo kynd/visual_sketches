@@ -71,7 +71,7 @@ Each demo's `index.html` contains only the canvas inside `.canvas-wrap`, the `?e
 
 ```js
 shell = mountShell({
-  title: 'Impostor spheres',          // shown in the control bar
+  title: 'Impostor spheres',          // not drawn on the canvas (the page names the demo)
   recordName: 'particles-impostors',  // prefix for recorded file names
   render,                             // render(t): pure function of time
   findMax: { id: 'count' },           // optional: adds the Find max button for a range param
@@ -80,7 +80,7 @@ shell = mountShell({
 render(0);                            // poster frame
 ```
 
-`mountShell` builds the control bar (title, Find max, Record, play/pause, fps meter), the params panel (top left), the stats label (bottom left) and the message box, and returns:
+`mountShell` builds the control bar (UI, Find max, Record, play/pause, fps meter), the params panel (top left), the stats label (bottom left) and the message box, and returns:
 
 | Field | Purpose |
 |---|---|
@@ -92,6 +92,10 @@ render(0);                            // poster frame
 | `shell.overlay` | `#overlay` element for demo-specific captions |
 
 `window.demo` is set to the shell for console debugging.
+
+**Layout.** No title is drawn on the canvas. `fitPanel()` keeps the params panel clear of the stats label: when one column would reach within 12 px of the label, the panel switches to a CSS grid with `grid-auto-flow: column` and as many rows per column as fit (rows get `min-height: 22px` so the columns line up). It runs on load, after web fonts load, on every parameter change and when the UI is shown.
+
+**UI toggle.** The *UI* button (or the H key, outside form fields) toggles `.ui-hidden` on `.canvas-wrap`: everything in `#overlay` except the message box is hidden, plus Find max and the fps meter (class `ui-hide`) and the bar's scrim. UI, Record and play/pause stay, and so does the recorder panel. `shell.setUi(bool)` sets it from code.
 
 ### Param specs
 

@@ -122,17 +122,20 @@ export function mountShell({ title, panel, render, onParam, findMax, recordName 
   const canvas = document.getElementById('canvas');
   const wrap = canvas.closest('.canvas-wrap');
 
+  // 'title' is kept for the page <title> and callers, but no longer drawn on the canvas.
   const bar = el('div', 'ctrl-bar scrim');
   const r1 = el('div', 'ctrl-bar-r1');
-  r1.appendChild(el('span', 'demo-title', title));
   r1.appendChild(el('div', 'ctrl-bar-spacer'));
-  const maxBtn = findMax ? el('button', 'bar-btn', 'Find max') : null;
+  const uiBtn = el('button', 'bar-btn active', 'UI');
+  uiBtn.title = 'Show or hide the controls and stats (H)';
+  r1.appendChild(uiBtn);
+  const maxBtn = findMax ? el('button', 'bar-btn ui-hide', 'Find max') : null;
   if (maxBtn) r1.appendChild(maxBtn);
   const recBtn = el('button', 'bar-btn', 'Record');
   const playBtn = el('button', 'play-btn');
   r1.append(recBtn, playBtn);
   const r2 = el('div', 'ctrl-bar-r2');
-  const fpsEl = el('span', 'fps-inline', 'paused');
+  const fpsEl = el('span', 'fps-inline ui-hide', 'paused');
   r2.appendChild(fpsEl);
   bar.append(r1, r2);
 
@@ -148,12 +151,43 @@ export function mountShell({ title, panel, render, onParam, findMax, recordName 
   wrap.append(overlay, bar);
 
   const loop = new Loop(t => render(t), playBtn);
-  const params = buildPanel(panelEl, panel, (id, v) => { onParam?.(id, v); loop.redraw(); });
+  const params = buildPanel(panelEl, panel, (id, v) => { onParam?.(id, v); loop.redraw(); fitPanel(); });
+
+  // Keep the panel clear of the stats label: if one column of controls would
+  // reach it, lay the rows out in as many columns as needed.
+  function fitPanel() {
+    panelEl.style.display = '';
+    panelEl.style.gridTemplateRows = '';
+    const top = panelEl.offsetTop;
+    const limit = label.offsetTop - 12;                       // stats label's top edge, less a margin
+    if (top + panelEl.offsetHeight <= limit) return;
+    const rows = [...panelEl.children].filter(r => r.style.display !== 'none');
+    const rowH = Math.max(22, ...rows.map(r => r.offsetHeight)) + 6;   // grid rows get min-height 22px
+    const pad = panelEl.offsetHeight - panelEl.clientHeight + 20; // borders + padding
+    const perCol = Math.max(1, Math.floor((limit - top - pad + 6) / rowH));
+    panelEl.style.display = 'grid';
+    panelEl.style.gridTemplateRows = `repeat(${perCol}, auto)`;
+  }
+
+  // UI toggle: hides the parameter panel, stats, fps meter, captions and
+  // Find max; the UI, Record and play/pause buttons stay.
+  function setUi(on) {
+    wrap.classList.toggle('ui-hidden', !on);
+    uiBtn.classList.toggle('active', on);
+    if (on) fitPanel();
+  }
+  uiBtn.addEventListener('click', () => setUi(wrap.classList.contains('ui-hidden')));
+  window.addEventListener('keydown', e => {
+    if (e.key !== 'h' && e.key !== 'H') return;
+    if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    setUi(wrap.classList.contains('ui-hidden'));
+  });
 
   const shell = {
     canvas, wrap, loop, params, overlay,
     fps: null,
     setStats(name, fn) { statName.textContent = name; statFn.textContent = fn; },
+    setUi,
     message(text) { msg.textContent = text || ''; msg.style.display = text ? 'block' : 'none'; },
   };
   shell.message('');
@@ -192,6 +226,8 @@ export function mountShell({ title, panel, render, onParam, findMax, recordName 
   };
 
   attachRecorder({ canvas, wrap, loop, render, button: recBtn, name: recordName || 'demo' });
+  fitPanel();
+  document.fonts?.ready.then(fitPanel);   // row heights change once the web fonts load
 
   canvas.addEventListener('webglcontextlost', e => {
     e.preventDefault();

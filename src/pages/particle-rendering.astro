@@ -70,6 +70,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Mesh detail</strong> — meshes only: icosphere subdivision level, from 20 to 1280 triangles per sphere.</li>
             <li><strong>Find max</strong> — starts playback and raises the count by half an octave per second while the frame rate stays at 55 fps or above; it stops one step below the first count that drops under. Pressing it again stops the search.</li>
             <li><strong>Record</strong> — opens the recorder (see <a href="#recording">Recording</a>).</li>
+            <li><strong>UI</strong> — shows or hides the parameter panel, stats, fps meter, inset caption and Find max; the H key does the same. Record and play/pause stay. Maps drawn into the canvas (Show map) stay too, since they are part of the image.</li>
             <li><strong>Canvas</strong> — drag to orbit the camera, scroll to zoom. Both work while paused.</li>
             <li><strong>Stats</strong> (bottom left) — method, particle count, GPU time, and the triangle count for quads and meshes.</li>
           </ul>
@@ -117,7 +118,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Lookup</strong> — per pixel (fragment shader) or per particle (vertex shader) shadow lookup for the spheres. The ground always looks up per pixel.</li>
             <li><strong>Ground</strong> — shows the shadow-receiving floor.</li>
             <li><strong>Show map</strong> — draws the shadow map in the bottom-right corner, nearer depths brighter. The inset appears in recordings too.</li>
-            <li><strong>Find max, Record, canvas drag and scroll</strong> — as in the first demo.</li>
+            <li><strong>Find max, Record, UI, canvas drag and scroll</strong> — as in the first demo.</li>
           </ul>
         </div>
       </details>
@@ -163,7 +164,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Density</strong> — the absorption factor {"\\( k \\)"}: how much light one full texel of coverage blocks. 0 turns shadows off.</li>
             <li><strong>Ground</strong> — shows the shadow-receiving floor.</li>
             <li><strong>Show map</strong> — draws the total coverage seen from the light (the deepest slice) in the bottom-right corner. The inset appears in recordings too.</li>
-            <li><strong>Find max, Record, canvas drag and scroll</strong> — as in the first demo.</li>
+            <li><strong>Find max, Record, UI, canvas drag and scroll</strong> — as in the first demo.</li>
           </ul>
         </div>
       </details>

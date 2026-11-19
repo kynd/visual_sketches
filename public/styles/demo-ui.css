@@ -205,7 +205,6 @@ html, body { background: #000; overflow: hidden; }
 #canvas { display: block; width: 1920px; height: 1080px; touch-action: none; cursor: grab; }
 #canvas:active { cursor: grabbing; }
 
-.demo-title { font-family: var(--font-ui); font-size: var(--sz-md); font-weight: 400; color: rgba(255,255,255,0.80); margin-left: 4px; }
 
 /* Floating translucent panel */
 .panel-box {
@@ -214,6 +213,9 @@ html, body { background: #000; overflow: hidden; }
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
 }
 #overlay .params-panel { position: absolute; left: 16px; top: 72px; gap: 6px; }
+/* Too tall for one column (set by fitPanel in demo-shell.js): rows flow into columns. */
+#overlay .params-panel[style*="grid"] { grid-auto-flow: column; column-gap: 20px; row-gap: 6px; align-content: start; }
+#overlay .params-panel[style*="grid"] > .params-row { min-height: 22px; }   /* even rows across columns */
 .params-row { gap: 10px; }
 .params-select { width: 120px; }
 .params-toggle { height: 20px; padding: 0 10px; font-size: 9px; }
@@ -253,3 +255,9 @@ html, body { background: #000; overflow: hidden; }
 .rec-status { font-family: var(--font-mono); font-size: 9px; color: rgba(255,255,255,0.55); white-space: nowrap; }
 .bar-btn.recording { color: #ff6b6b; border-color: rgba(255,107,107,0.6); }
 .bar-btn.recording::before { content: '●\00a0'; }
+
+/* UI toggle: hide everything but the UI, Record and play/pause buttons. */
+.ui-hidden #overlay > :not(.demo-msg) { display: none !important; }
+.ui-hidden .ui-hide { visibility: hidden; }
+.ui-hidden .bar-btn.ui-hide { display: none; }
+.ui-hidden .ctrl-bar.scrim { background: none; }

@@ -213,7 +213,7 @@ export function mountEnvPlume({ title, recordName, envs, defaults }) {
     panel: [
       { id: 'env', label: 'Environment', type: 'select', value: d.env, options: envs.map(k => [k, envById[k].label]) },
       { id: 'shading', label: 'Shading', type: 'select', value: d.shading,
-        options: [['0', 'Paint (map as colour)'], ['1', 'Light (map as light)'], ['2', 'Mirror']] },
+        options: [['0', 'Paint'], ['1', 'Light'], ['2', 'Mirror']] },
       { id: 'lookup', label: 'Lookup', type: 'select', value: d.lookup, options: [['0', 'Normal'], ['1', 'Reflection']] },
       range('blur', 'Blur (mip level)', 0, 8, 0.25, d.blur),
       range('exposure', 'Exposure', 0.2, 4, 0.05, d.exposure),
