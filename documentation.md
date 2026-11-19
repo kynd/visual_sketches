@@ -11,6 +11,8 @@ A collection of small interactive studies in real-time graphics. Each page takes
 | Site framework | Astro 4.x, `output: 'static'`, base `/visual_sketches` |
 | Graphics | WebGL2 (raw, GLSL ES 3.00) for particle demos; Three.js `0.169.0` via importmap allowed |
 | Video | WebCodecs `VideoEncoder` + `mp4-muxer@5.2.1`; `fflate@0.8.2` for PNG zips; `MediaRecorder` for realtime |
+| Noise | Simplex noise with analytic gradient from webgl-noise (Gustavson & McEwan, MIT), inlined in `flow-glsl.js` |
+| Environment maps | Procedural equirectangular maps, ideas from geom (`oklch-envmap.js`, `lab-envmap.js`, sound-fill) |
 | Fonts | `Lora` / `Sora` + `Google Sans Code` via Google Fonts |
 | Math rendering | KaTeX `0.16.11` via CDN |
 
@@ -24,7 +26,9 @@ A collection of small interactive studies in real-time graphics. Each page takes
 │   ├── pages/
 │   │   ├── index.astro              ← renders content/pages/index.md
 │   │   ├── [...slug].astro          ← renders other content-collection pages
-│   │   └── particle-rendering.astro
+│   │   ├── particle-rendering.astro
+│   │   ├── noise-flow.astro
+│   │   └── environment-maps.astro
 │   ├── content/pages/index.md       ← intro page (placeholder)
 │   └── layouts/PageLayout.astro
 │
@@ -32,14 +36,24 @@ A collection of small interactive studies in real-time graphics. Each page takes
 │   ├── demos/
 │   │   ├── particles-impostors/         index.html, main.js
 │   │   ├── particles-shadow-map/        index.html, main.js
-│   │   └── particles-opacity-shadows/   index.html, main.js
+│   │   ├── particles-opacity-shadows/   index.html, main.js
+│   │   ├── flow-plume/                  index.html, main.js
+│   │   ├── flow-streamlines/            index.html, main.js
+│   │   ├── flow-sphere/                 index.html, main.js
+│   │   ├── flow-lattice/                index.html, main.js
+│   │   ├── env-geom/                    index.html, main.js
+│   │   └── env-sky/                     index.html, main.js
 │   ├── js/
 │   │   ├── demo-shell.js
 │   │   ├── recorder.js
 │   │   └── particles/
 │   │       ├── gl.js        ← Program wrapper, mat4, OrbitCamera, GpuTimer, icosphere
 │   │       ├── glsl.js      ← particle uber-shader, ground and inset shaders
-│   │       └── scene.js     ← ParticleScene: program cache, uniforms, draw calls, light frustum
+│   │       ├── scene.js     ← ParticleScene: program cache, uniforms, draw calls, light frustum
+│   │       ├── flow-glsl.js ← noise-flow position pass: simplex noise + gradient, curl noise, 4 modes
+│   │       ├── flow-demo.js ← mountFlowDemo(), positionTargets(), shadowTargets()
+│   │       ├── env-glsl.js  ← environment maps (equirect generation) + ENV_SHADING
+│   │       └── env-plume.js ← mountEnvPlume(): env pass → plume → sun shadow → env-lit camera pass
 │   └── styles/demo-ui.css
 │
 ├── CLAUDE.md
@@ -133,6 +147,11 @@ Particle positions are computed in the vertex shader from the particle index (`g
 | `EXACT_DEPTH` | impostors write `gl_FragDepth` from the reconstructed sphere point (disables early-Z) |
 | `SHADOW_MAP_PIXEL` / `SHADOW_MAP_PARTICLE` | shadow-map lookup in the fragment / vertex shader |
 | `OPACITY_SHADOW` | per-particle opacity-map lookup in the vertex shader |
+| `POS_TEXTURE` | read centre (xyz) and radius (w) from `uPosTex` (RGBA32F, width `uPosW`) at texel `id + uIdOffset` instead of `particlePos()`; radius ≤ 0 clips the particle away |
+| `ENV_LIGHTING` | shade with `envShade()` / `envOutput()` from `env-glsl.js`; pass `ENV_SHADING` as `particleShaders(defines, extra)` |
+| `ALBEDO <v>` | replace the 0.88 material with `<v>` (same lights) — used for the dark core in *Flow on a sphere* |
+
+`PASS_SHADOW_DEPTH` also works with `METHOD_BILLBOARD` (quad expanded in light space) for spheres too large for `gl_PointSize`. The radius is passed to the fragment shader as `flat vRad`, so it may vary per particle.
 
 `ParticleScene.program(defines, kind)` caches compiled programs by define list. `Program.set()` / `setAll()` silently skip uniforms that a variant doesn't use.
 
@@ -168,6 +187,38 @@ Orthographic, eye at `KEY_LIGHT × 5` looking at the origin, half-width 2.2, nea
 ### Opacity shadow map demo
 
 Four `RGBA32F` targets (when `EXT_float_blend` + `OES_texture_float_linear` exist, else `RGBA16F`; requires `EXT_color_buffer_float`), additive blending, no depth test. Slice `k` (1…16) accumulates coverage of every particle with slice coordinate `f ≤ k`. Coverage per particle: `π d²/4` for diameter `d < 1` texel, else 1 per covered texel. Lookup interpolates the two bracketing slices with a one-slice lag toward the light (avoids self-shadowing); transmittance `exp(−k·c)`.
+
+### Noise flow (`flow-glsl.js`, `flow-demo.js`)
+
+`mountFlowDemo({ title, recordName, mode, panel, layout, findMax })` builds a whole demo. `layout(values)` returns `{ n, maxRadius, coreR?, uniforms, info }`. Each frame:
+
+1. **Position pass** — full-screen quad into an RGBA32F texture `1024 × ceil((n+1)/1024)`; the fragment for particle `i` writes `vec4(centre, radius)`. Texel `n` holds the optional core sphere (`uCoreR`). Requires `EXT_color_buffer_float`.
+2. **Light pass** — `METHOD_POINTS + PASS_SHADOW_DEPTH + POS_TEXTURE`; the core (if any) is a one-instance billboard with `uIdOffset = n`.
+3. **Camera pass** — ground, then `METHOD_* + PASS_CAMERA + SHADOW_MAP_PIXEL + POS_TEXTURE`; the core adds `EXACT_DEPTH` and `ALBEDO 0.16`.
+
+Two `GpuTimer`s split GPU time into *flow* (pass 1) and *shading* (passes 2–3).
+
+Noise: webgl-noise `snoise(vec3, out grad)` (analytic gradient). `curlNoise(p, t)` = curl of three offset potentials, each drifting in its own direction at `uEvolve`.
+
+| Mode | Kernel |
+|---|---|
+| `plume` | Emitter disc on the floor (`uEmitR`), `v = uFlow·curl + (0, uRise, 0) − p.xz·uContain`. Lifetime `uLife × [0.7, 1.3]`, random phase; the life counter seeds the spawn point. Replays the life from birth with fixed step `h = life/uSteps` (RK2 midpoint, last step partial) so the path is identical every frame. |
+| `stream` | Line = `id / uLineLen`, bead `k = id % uLineLen`. Seed uniform in a ball of radius 1.05. Traces `k + fract(uTime·uAlong/uSpacing)` steps of length `uSpacing` along the unit direction of `curl + containVel(p, 1)` (field frozen at `uTime`). Ends taper. Cost O(L²) per line. |
+| `surface` | Unit sphere; scalar noise (2 octaves) gradient `g` projected to the tangent plane; `v = uFlow·(n × g + uGather·g)`; renormalized after each step. Lifetimes as in `plume`; fade in over the first 35% of life. |
+| `lattice` | `uSide³` grid in a cube of half-size `uHalf`; radius `½·spacing·uFill·smoothstep(uThreshold, +0.35, ρ)`, with ρ two noise octaves sampled at `p + uWarp·curl/4 − uRise·t·ŷ`. |
+
+### Environment maps (`env-glsl.js`, `env-plume.js`)
+
+`mountEnvPlume({ title, recordName, envs, defaults })` — the curl-noise plume (`flow-glsl.js` `plume` mode, Noise frequency 1.0, 24 steps) lit by an environment map.
+
+- **Map**: 2048×1024 `RGBA16F`, 12 mip levels, `REPEAT` in u. `envMapShaders()` renders environment `uEnv` per texel from `dirFromUv()`: `u = atan(z, x)/2π + ½`, `v = asin(y)/π + ½`. Re-rendered when the env or Sun strength changes, and every frame for animated envs; then `generateMipmap`. All lookups use `textureLod` (no seam at the atan wrap); *Blur* is the LOD.
+- **Envs** (`ENV_LIST`): 0 studio softboxes, 1 OKLCH hue sphere, 2 CIELAB hue sphere (both: azimuth → hue, elevation → lightness, max in-gamut chroma by 20-step bisection, after geom's `oklch-envmap.js` / `lab-envmap.js`), 3 anisotropic wave, 4 drifting caustic (geom sound-fill modes 1 and 3, mirrored at u = ½, smooth per-band levels instead of FFT), 5 clear, 6 sunset, 7 cloudy (cloud layer at `d.xz/d.y`, 5-octave fbm, lit by a density difference toward the sun), 8 overcast (CIE `(1+2 sin θ)/3`), 9 night (hashed stars, Milky Way band, moon), 10 aurora (8 curtain layers across the default view direction), 11 underwater (Snell's window at cos 48.6°, ripples, shafts).
+- **Land** (envs ≥ 5, below the horizon): `0.3·(env(zenith) + uSunCol·max(sun.y, 0))` under a haze band (0.06 rad; 0.6 under water). The ground plane uses the same formula with the zenith texel, then fades into the background, so they meet without a seam.
+- **Sun**: `SUN` table in `env-plume.js` — direction (env frame), colour, gain per env. *Rotation* turns the env (`uEnvRot`) and the sun together. `ParticleScene.setLight(dir, pts)` refits a square orthographic frustum around the floor corners and the plume's top corners every frame; bias adds `3·half/res`.
+- **Shading** (`ENV_SHADING`): `E = envSample(normal or reflect(rd, n), uBlur)`, `a = mix(1, shadow, uOcclusion)`. Paint `E·(0.4a + 0.75·s·(n·l)·C)`, Light `0.8·(E·a + s·(n·l)·C)`, Mirror `0.9·E·a·(0.6 + 0.4(1−n·v)⁵)`, plus a Blinn-Phong sun highlight. Output: exposure → ACES (Narkowicz) → gamma.
+- **Passes**: env (unit 2) → plume positions (unit 1) → sun depth (unit 0) → background (`backgroundShaders`, view ray from `uCamRot` + `uProj`) → ground (`envGroundShaders`) → spheres (`ENV_LIGHTING`) → optional env inset.
+
+`shaderHead(defines, extra)` in `glsl.js` returns header + shared uniforms/functions for shaders outside the uber-shader.
 
 ### GPU timing
 

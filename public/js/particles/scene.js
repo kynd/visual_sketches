@@ -49,9 +49,30 @@ export class ParticleScene {
     const eye = KEY_LIGHT.map(c => c * dist);
     const { view } = mat4.lookAt(eye, [0, 0, 0], [0, 1, 0]);
     this.light = {
-      half, dist, near: 0.5, far: 12, view,
+      half, dist, near: 0.5, far: 12, view, dir: KEY_LIGHT,
       proj: mat4.ortho(-half, half, -half, half, 0.5, 12),
     };
+  }
+
+  // Aim the shadow-casting light along 'dir' (unit vector toward the light) and
+  // fit a square orthographic frustum around the world-space points 'pts'.
+  setLight(dir, pts) {
+    const up = Math.abs(dir[1]) > 0.99 ? [0, 0, 1] : [0, 1, 0];
+    const dist = 20;
+    const { view } = mat4.lookAt(dir.map(c => c * dist), [0, 0, 0], up);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [px, py, pz] of pts) {
+      const x = view[0] * px + view[4] * py + view[8] * pz + view[12];
+      const y = view[1] * px + view[5] * py + view[9] * pz + view[13];
+      const z = view[2] * px + view[6] * py + view[10] * pz + view[14];
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+    }
+    const half = Math.max(x1 - x0, y1 - y0) / 2 * 1.02;
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const near = -z1 - 0.5, far = -z0 + 0.5;
+    this.light = { half, dist, near, far, view, dir, proj: mat4.ortho(cx - half, cx + half, cy - half, cy + half, near, far) };
   }
 
   program(defines, kind = 'particle') {
@@ -83,7 +104,7 @@ export class ParticleScene {
       uCount: this.count(values),
       uRadius: values.radius,
       uView: view, uProj: proj, uCamRot: rot, uCamPos: eye,
-      uKeyDir: new Float32Array(KEY_LIGHT),
+      uKeyDir: new Float32Array(this.light.dir),
       uViewportH: canvas.height,
       uMaxPointSize: this.maxPointSize,
       uLightView: this.light.view,

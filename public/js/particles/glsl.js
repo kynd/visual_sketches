@@ -4,7 +4,10 @@
 //
 // Method defines (camera pass): METHOD_POINTS | METHOD_BILLBOARD | METHOD_MESH
 // Pass defines:                 PASS_CAMERA | PASS_SHADOW_DEPTH | PASS_OPACITY
-// Options:                      EXACT_DEPTH, SHADOW_MAP_PIXEL, SHADOW_MAP_PARTICLE, OPACITY_SHADOW
+// Options:                      EXACT_DEPTH, SHADOW_MAP_PIXEL, SHADOW_MAP_PARTICLE, OPACITY_SHADOW,
+//                               ENV_LIGHTING (needs env-glsl.js passed as 'extra')
+// Source:                       POS_TEXTURE — read centre + radius from a texture written by a
+//                               compute-style pass (see flow-glsl.js) instead of particlePos()
 
 export const KEY_LIGHT = (() => { const v = [0.6, 1.0, 0.7]; const l = Math.hypot(...v); return v.map(c => c / l); })();
 
@@ -45,6 +48,12 @@ uniform sampler2D uOpa3;
 uniform float uOpaNear;     // light distance of slice 0
 uniform float uOpaStep;     // slice spacing
 uniform float uOpaK;        // absorption per unit of accumulated coverage
+
+#ifdef POS_TEXTURE
+uniform highp sampler2D uPosTex;  // RGBA32F: xyz = centre, w = radius (0 hides the particle)
+uniform int   uPosW;              // texture width; particle i lives at (i % W, i / W)
+uniform int   uIdOffset;          // first texel of this draw (WebGL2 has no base instance)
+#endif
 
 const float TAU = 6.28318530718;
 
@@ -124,7 +133,11 @@ vec3 stdLighting(vec3 nor, vec3 rd, float sh) {
   float dk = max(dot(nor, lk), 0.0) * sh;
   vec3  lf = normalize(vec3(-0.8, 0.3, 0.5));
   float df = max(dot(nor, lf), 0.0) * 0.28;
+#ifdef ALBEDO
+  vec3 col = vec3(ALBEDO) * (0.13 + dk * 0.84 + df) / 0.88;   // darker material, same light rig
+#else
   vec3 col = vec3(0.88) * (0.13 + dk * 0.84 + df);
+#endif
   vec3 hv = normalize(lk - rd);
   col += vec3(0.40) * pow(max(dot(nor, hv), 0.0), 72.0) * sh;
   float fr = pow(1.0 - max(dot(nor, -rd), 0.0), 4.0);
@@ -146,6 +159,7 @@ out vec3  vWorld;
 out float vShadow;
 out float vLightDist;
 out float vCover;
+flat out float vRad;
 
 void main() {
 #ifdef METHOD_POINTS
@@ -153,13 +167,29 @@ void main() {
 #else
   uint id = uint(gl_InstanceID);
 #endif
+#ifdef POS_TEXTURE
+  int ti = int(id) + uIdOffset;
+  vec4 pt = texelFetch(uPosTex, ivec2(ti % uPosW, ti / uPosW), 0);
+  vec3 c = pt.xyz;
+  float rad = pt.w;
+  if (rad <= 0.0) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); gl_PointSize = 0.0; return; }  // clipped away
+#else
   vec3 c = particlePos(id);
+  float rad = uRadius;
+#endif
+  vRad = rad;
 
 #if defined(PASS_SHADOW_DEPTH) || defined(PASS_OPACITY)
-  // Light pass: always drawn as point sprites in an orthographic light view.
+  // Light pass: point sprites in an orthographic light view (quads for spheres
+  // too large for gl_PointSize).
   vec4 lv = uLightView * vec4(c, 1.0);
+  #ifdef METHOD_BILLBOARD
+  vec2 q = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1)) * 2.0 - 1.0;
+  vQ = q;
+  lv.xy += q * rad;
+  #endif
   gl_Position = uLightProj * lv;
-  float diam = uRadius / uLightHalf * uLightRes;      // diameter in light-map texels
+  float diam = rad / uLightHalf * uLightRes;      // diameter in light-map texels
   gl_PointSize = clamp(diam, 1.0, uMaxPointSize);
   vCover = diam < 1.0 ? 0.785398 * diam * diam : 1.0; // sub-texel particles deposit partial coverage
   vLightDist = -lv.z;
@@ -168,19 +198,19 @@ void main() {
   vCenterV = cv.xyz;
   #if defined(METHOD_POINTS)
   gl_Position = uProj * cv;
-  gl_PointSize = clamp(uRadius * uProj[1][1] * uViewportH / -cv.z, 1.0, uMaxPointSize);
+  gl_PointSize = clamp(rad * uProj[1][1] * uViewportH / -cv.z, 1.0, uMaxPointSize);
   #elif defined(METHOD_BILLBOARD)
   vec2 q = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1)) * 2.0 - 1.0;
   vQ = q;
-  gl_Position = uProj * vec4(cv.xyz + vec3(q * uRadius, 0.0), 1.0);
+  gl_Position = uProj * vec4(cv.xyz + vec3(q * rad, 0.0), 1.0);
   #else
   vNormalW = aPos;
-  vWorld = c + aPos * uRadius;
+  vWorld = c + aPos * rad;
   gl_Position = uProj * uView * vec4(vWorld, 1.0);
   #endif
 
   #if defined(SHADOW_MAP_PARTICLE)
-  vShadow = shadowMapLookup(c + uKeyDir * uRadius);
+  vShadow = shadowMapLookup(c + uKeyDir * rad);
   #elif defined(OPACITY_SHADOW)
   vShadow = exp(-uOpaK * opticalDepth(c, 1.0));
   #else
@@ -198,6 +228,7 @@ in vec3  vWorld;
 in float vShadow;
 in float vLightDist;
 in float vCover;
+flat in float vRad;
 
 #ifdef PASS_OPACITY
 layout(location = 0) out vec4 o0;
@@ -210,7 +241,11 @@ out vec4 fragColor;
 
 void main() {
 #if defined(PASS_SHADOW_DEPTH)
+  #ifdef METHOD_BILLBOARD
+  vec2 q = vQ;
+  #else
   vec2 q = gl_PointCoord * 2.0 - 1.0;
+  #endif
   if (dot(q, q) > 1.0) discard;          // depth comes from the flat disc at the centre
 #elif defined(PASS_OPACITY)
   vec2 q = gl_PointCoord * 2.0 - 1.0;
@@ -237,7 +272,7 @@ void main() {
   if (d2 > 1.0) discard;
   // Impostor: rebuild a hemisphere normal from the sprite coordinate.
   vec3 nV = vec3(q, sqrt(1.0 - d2));
-  vec3 pV = vCenterV + nV * uRadius;
+  vec3 pV = vCenterV + nV * vRad;
   vec3 n  = uCamRot * nV;
   vec3 wp = uCamPos + uCamRot * pV;
   vec3 rd = uCamRot * normalize(vCenterV);
@@ -248,17 +283,29 @@ void main() {
   #endif
   float sh = vShadow;
   #ifdef SHADOW_MAP_PIXEL
-  sh = shadowMapLookup(wp + n * uRadius * 0.15);
+  sh = shadowMapLookup(wp + n * vRad * 0.15);
   #endif
+  #ifdef ENV_LIGHTING
+  fragColor = vec4(envOutput(envShade(n, rd, sh)), 1.0);   // env-glsl.js, injected as 'extra'
+  #else
   vec3 col = stdLighting(n, rd, sh);
   fragColor = vec4(pow(max(col, 0.0), vec3(0.4545)), 1.0);
+  #endif
 #endif
 }
 `;
 
-export function particleShaders(defines) {
-  const head = HEADER + defines.map(d => `#define ${d}\n`).join('') + COMMON;
+// 'extra' is GLSL appended after the common block — e.g. the environment-map
+// shading from env-glsl.js, used with the ENV_LIGHTING define.
+export function particleShaders(defines, extra = '') {
+  const head = HEADER + defines.map(d => `#define ${d}\n`).join('') + COMMON + extra;
   return { vs: head + VS, fs: head + FS };
+}
+
+// Header + defines + shared uniforms/functions (+ extra), for shaders that live
+// outside this file but use the same uniforms (env-glsl.js).
+export function shaderHead(defines = [], extra = '') {
+  return HEADER + defines.map(d => `#define ${d}\n`).join('') + COMMON + extra;
 }
 
 // Ground plane and debug inset share the uniforms above.

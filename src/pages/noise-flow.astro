@@ -1,0 +1,227 @@
+---
+import PageLayout from '../layouts/PageLayout.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<PageLayout title="Noise flow" slug="noise-flow">
+  <div class="monologue">
+    A noise function hands out one number per point in space. Ask for its curl, its gradient, or just its value, and the same field becomes smoke, hair, weather or coral.
+  </div>
+
+  <div class="prose">
+    <p>
+      The four demos below take the shadow-mapped spheres from <a href={`${base}/particle-rendering#shadow-map`}>Particle rendering</a> and let a 3D noise field move them. Each one reads "flow based on noise" differently: particles carried by the field, lines traced through it, a flow confined to a surface, and a fixed grid that the field itself flows through. The renderer is the same in all four: point sprites or instanced quads, a depth pass from the key light, and a per-pixel shadow lookup.
+    </p>
+
+    <div class="subhead">Simulation without state</div>
+    <p>
+      Following a flow is normally a simulation: store every position, then each frame add velocity times the time step. These demos can't keep that state, because each frame has to be a pure function of time — the recorder renders frame {"\\( n \\)"} at {"\\( t_0 + n/\\text{fps} \\)"} directly, and the time can jump. So every frame, each particle replays its whole trajectory from the moment it was born.
+    </p>
+    <p>
+      The replay uses a fixed step {"\\( h \\)"}: a particle of age {"\\( a \\)"} takes {"\\( \\lfloor a/h \\rfloor \\)"} full steps and one partial step. Its path is identical in every frame, step for step, so the result matches a stored simulation exactly. The price is work: a particle halfway through its life repeats half its life's worth of steps every frame.
+    </p>
+
+    <div class="subhead">One position pass, read three times</div>
+    <p>
+      That replay is far too expensive to run in the vertex shader. The light pass and the camera pass each draw every particle, and an instanced quad runs its vertex shader four times, so the integration would run up to five times per particle. Instead, a position pass computes it once. A full-screen quad over an RGBA32F texture runs one fragment per particle and writes the sphere's centre and radius. The light and camera passes then fetch them with <code>texelFetch</code>.
+    </p>
+    <div class="page-note">
+      <strong>Layout.</strong> The texture is 1024 texels wide; particle {"\\( i \\)"} lives at {"\\( (i \\bmod 1024,\\; \\lfloor i/1024 \\rfloor) \\)"}. A radius of 0 hides a particle: the vertex shader moves it outside the clip volume, so it costs one texel fetch and nothing more. Writing float textures requires <code>EXT_color_buffer_float</code>.
+      <br /><br />
+      <strong>Timing.</strong> Where <code>EXT_disjoint_timer_query_webgl2</code> is available, the stats line splits GPU time into the position pass (<em>flow</em>) and everything after it (<em>shading</em>). In the plume and the streamlines the flow pass usually dominates; in the lattice it is almost free.
+    </div>
+
+    <div class="subhead">Curl noise</div>
+    <p>
+      Raw noise makes a poor velocity field. Where it points inward from all sides, particles pile into clumps; where it points outward, the volume empties. A fluid avoids both because it is incompressible: the field has zero divergence. Curl noise (Bridson, Hourihan and Nordenstam, 2007) gets that property for free. Three noise fields form a vector potential {"\\( \\psi \\)"}, and the velocity is its curl, which is divergence-free by construction:
+    </p>
+    <div class="math-block">{"\\[ v = \\nabla \\times \\psi = \\left( \\frac{\\partial \\psi_3}{\\partial y} - \\frac{\\partial \\psi_2}{\\partial z},\\; \\frac{\\partial \\psi_1}{\\partial z} - \\frac{\\partial \\psi_3}{\\partial x},\\; \\frac{\\partial \\psi_2}{\\partial x} - \\frac{\\partial \\psi_1}{\\partial y} \\right) \\]"}</div>
+    <p>
+      The curl needs derivatives, and simplex noise provides them analytically. Stefan Gustavson and Ian McEwan's <a href="https://github.com/stegu/webgl-noise">webgl-noise</a> returns the gradient alongside the value, so one velocity costs three noise evaluations instead of the eighteen that finite differences would need.
+    </p>
+    <div class="page-note">
+      <strong>Changing over time.</strong> Each of the three potentials drifts through the noise in its own direction, at a rate set by <em>Field evolution</em>. Since the components move independently, the field changes shape rather than sliding by as a whole.
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="plume">
+    <div class="demo-header">
+      <h2>Curl-noise plume</h2>
+      <a href={`${base}/demos/flow-plume/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/flow-plume/index.html?embedded`} title="Curl-noise plume" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        The most literal reading is particles carried by the field. Spheres leave a disc on the floor, rise at a constant speed, and the curl noise stirs them as they go. Velocity is the curl plus an upward term:
+      </p>
+      <div class="math-block">{"\\[ v(p, t) = s \\, (\\nabla \\times \\psi)(p, t) + (0,\\, u,\\, 0) \\]"}</div>
+      <p>
+        A divergence-free field moves particles without clumping them, so a uniform spray stays uniform. Structure appears here for a different reason: particles that leave the emitter close together follow nearly the same path, so the plume shows the field's streaklines as sheets and filaments. When the field changes slowly, those filaments hold together; raising <em>Field evolution</em> or <em>Turbulence</em> smears them into haze.
+      </p>
+      <p>
+        Every particle lives for a few seconds, then respawns at a new point on the emitter. It shrinks to nothing near the end of its life and grows from nothing at the start, so respawning never pops. The ground and the self-shadowing come straight from the shadow-map renderer and show the plume's density: thin outer sheets cast light shadows, and the dense core casts a solid one.
+      </p>
+      <div class="page-note">
+        <strong>Integration.</strong> Each step uses the midpoint method: sample the velocity, move half a step, sample again, and take the full step with the second sample. That costs two velocity samples per step instead of one, but stays stable at step sizes where Euler integration overshoots. The step is fixed at {"\\( h = \\text{lifetime}/\\text{steps} \\)"}. Spreading a fixed number of steps over the particle's current age would cost less, but the step size would change every frame, and so would the path: particles would visibly swim.
+        <br /><br />
+        <strong>Cost.</strong> On average a particle replays half its steps per frame. With 24 steps that is 12 midpoint steps, 24 velocity samples and 72 noise evaluations per particle per frame. The cost grows with <em>Count</em> × <em>Steps per life</em>.
+        <br /><br />
+        <strong>Lifetimes.</strong> Each particle's lifetime is the base <em>Lifetime</em> scaled by a random factor between 0.7 and 1.3, with a random phase, so particles don't respawn in sync. A counter of past lives seeds the emitter position, so every life starts somewhere new.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Method</strong> — point sprites or instanced quads for the camera pass. The light pass always uses point sprites.</li>
+            <li><strong>Count</strong> — number of particles, from 4K to 2M in half-octave steps.</li>
+            <li><strong>Radius</strong> — largest sphere radius; individual spheres vary between 55% and 100% of it.</li>
+            <li><strong>Speed</strong> — playback rate for the whole simulation.</li>
+            <li><strong>Turbulence</strong> — scale {"\\( s \\)"} of the curl-noise velocity.</li>
+            <li><strong>Rise speed</strong> — upward velocity {"\\( u \\)"} added to the curl noise.</li>
+            <li><strong>Noise frequency</strong> — noise features per world unit; higher values give smaller eddies.</li>
+            <li><strong>Field evolution</strong> — how fast the noise field changes shape over time.</li>
+            <li><strong>Lifetime</strong> — average seconds a particle lives before it respawns on the emitter.</li>
+            <li><strong>Steps per life</strong> — integration steps across a full lifetime. Fewer steps cost less and cut corners on tight eddies.</li>
+            <li><strong>Map size, Filter</strong> — shadow map resolution and PCF kernel, as in the shadow-map demo.</li>
+            <li><strong>Ground</strong> — shows the shadow-receiving floor.</li>
+            <li><strong>Show map</strong> — draws the shadow map in the bottom-right corner.</li>
+            <li><strong>Find max, Record, canvas drag and scroll</strong> — Find max raises Count while the frame rate holds 55 fps; Record captures video (see <a href={`${base}/particle-rendering#recording`}>Recording</a>); drag orbits the camera and scroll zooms.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="streamlines">
+    <div class="demo-header">
+      <h2>Streamline beads</h2>
+      <a href={`${base}/demos/flow-streamlines/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/flow-streamlines/index.html?embedded`} title="Streamline beads" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        A streamline is the path a particle would take if the field stopped changing. Drawing the whole line at once shows the shape of the flow in a single frame, which the plume can only reveal over time. Here the particles are beads strung along streamlines. A line of 64 beads, each placed one spacing further along the line from a random seed, reads as a tube of spheres.
+      </p>
+      <p>
+        The beads also slide along their lines. Bead {"\\( k \\)"} sits at arc position {"\\( k + \\operatorname{fract}(t \\cdot v / \\Delta) \\)"} beads from the seed, where {"\\( \\Delta \\)"} is the spacing and {"\\( v \\)"} the flow speed. When the fraction wraps from 1 back to 0, every bead moves into the slot its neighbour just left, so the change is invisible. Only the ends could show it, and both taper to zero radius.
+      </p>
+      <p>
+        The tracing steps along the normalized direction {"\\( v / |v| \\)"} rather than the velocity itself, so beads stay evenly spaced even where the flow is slow. Unlike the plume's frozen paths, the lines are retraced through the field as it stands at time {"\\( t \\)"}, so they bend and drift as the field evolves. A soft wall pulls any line that leaves a unit ball back toward the centre, which keeps the bundle compact enough to cast the dense, hair-like shadows on the floor.
+      </p>
+      <div class="page-note">
+        <strong>Cost.</strong> Each bead traces its line from the seed independently. Bead {"\\( k \\)"} takes {"\\( k \\)"} steps, so a line of {"\\( L \\)"} beads costs about {"\\( L^2/2 \\)"} steps where {"\\( L \\)"} would do: doubling <em>Beads per line</em> at a fixed Count doubles the flow pass. Tracing each line once would need the beads to share results — one draw per bead index, each pass reading the previous one — which trades the quadratic work for {"\\( L \\)"} small draw calls.
+        <br /><br />
+        <strong>Containment.</strong> Outside radius 1, the tracer adds {"\\( -\\hat{p}\\,(|p| - 1)\\,c \\)"} to the curl before normalizing, where {"\\( c \\)"} is <em>Containment</em>. This term is not divergence-free, so lines bunch up slightly near the wall.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Method, Count, Radius, Speed</strong> — as in the plume. Count is rounded down to a whole number of lines.</li>
+            <li><strong>Beads per line</strong> — spheres per streamline, from 8 to 256. Longer lines cost quadratically more.</li>
+            <li><strong>Bead spacing</strong> — world distance between neighbouring beads. Around twice the radius, the beads touch and read as a tube.</li>
+            <li><strong>Flow speed</strong> — how fast beads slide along their lines, in world units per second.</li>
+            <li><strong>Noise frequency</strong> — noise features per world unit; higher values coil the lines more tightly.</li>
+            <li><strong>Field evolution</strong> — how fast the field, and with it every line, changes shape.</li>
+            <li><strong>Containment</strong> — strength {"\\( c \\)"} of the soft wall at radius 1. At 0, lines wander off freely.</li>
+            <li><strong>Map size, Filter, Ground, Show map, Find max, Record</strong> — as in the plume.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="sphere-flow">
+    <div class="demo-header">
+      <h2>Flow on a sphere</h2>
+      <a href={`${base}/demos/flow-sphere/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/flow-sphere/index.html?embedded`} title="Flow on a sphere" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        On a surface, one noise field {"\\( \\psi \\)"} is enough to define a flow. Its gradient {"\\( \\nabla \\psi \\)"}, projected onto the tangent plane, points uphill toward the noise peaks. Rotating it a quarter turn about the surface normal {"\\( n \\)"} gives {"\\( n \\times \\nabla \\psi \\)"}, which runs along the contour lines and circles each peak without approaching it. This rotated field is the surface version of curl noise: it neither gathers nor spreads.
+      </p>
+      <div class="math-block">{"\\[ v = s \\left( n \\times \\nabla_{\\!T} \\psi + g \\, \\nabla_{\\!T} \\psi \\right) \\]"}</div>
+      <p>
+        This demo mixes the two parts deliberately. With <em>Gather</em> {"\\( g \\)"} at zero, the particles stay evenly spread and the surface shows no pattern at all. Raising it turns each peak into a drain: particles spiral inward along arms that look like weather systems seen from orbit. After each step the particle is projected back onto the unit sphere. Particles respawn uniformly and fade in over the first third of their lives, so what shows is mostly the converging arms rather than the spray that feeds them.
+      </p>
+      <p>
+        A dark solid core hides the far side, which would otherwise show through and blur the pattern. Particles sit just above the core and cast contact shadows onto it, and the core in turn shadows every particle on its night side.
+      </p>
+      <div class="page-note">
+        <strong>Drawing the core.</strong> The core is one more sphere, stored in the texel after the last particle and drawn with its own one-instance call. WebGL2 has no base-instance draw, so a uniform offsets the texel index instead. The core uses an instanced quad in both passes, because at radius 0.985 its sprite would exceed the hardware point-size limit (often 511 or 1024 pixels). It writes exact depth so particles meet its curved surface, and a define gives it a darker material under the same lights.
+        <br /><br />
+        <strong>Two octaves.</strong> The surface field adds a second noise octave at 2.1× frequency and 0.7 weight to the gradient, so the large systems carry smaller eddies along their arms.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Method, Count, Radius, Speed</strong> — as in the plume. Individual spheres vary between 60% and 100% of the radius.</li>
+            <li><strong>Flow strength</strong> — overall velocity scale {"\\( s \\)"}.</li>
+            <li><strong>Gather</strong> — weight {"\\( g \\)"} of the uphill gradient. 0 is pure swirl with no pattern; higher values drain particles into tighter spirals.</li>
+            <li><strong>Noise frequency</strong> — noise features per world unit; higher values give more, smaller systems.</li>
+            <li><strong>Field evolution</strong> — how fast the systems change and drift.</li>
+            <li><strong>Lifetime, Steps per life</strong> — as in the plume.</li>
+            <li><strong>Solid core</strong> — shows the dark sphere inside the particle shell.</li>
+            <li><strong>Map size, Filter, Ground, Show map, Find max, Record</strong> — as in the plume.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="lattice">
+    <div class="demo-header">
+      <h2>Noise lattice</h2>
+      <a href={`${base}/demos/flow-lattice/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/flow-lattice/index.html?embedded`} title="Noise lattice" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        The last reading turns the question around: the particles stay put and the noise moves. Spheres sit on a fixed cubic grid. Each one takes its radius from the noise value at its grid point, from zero below a threshold up to a full sphere just above it. What shows is the noise field itself, as a voxel sculpture of balls.
+      </p>
+      <p>
+        Moving that field is where the flow comes in. The density drifts upward over time, and its lookup point is displaced by the same curl noise as in the plume, so the shapes twist as they rise instead of scrolling past like a texture. Nothing on the grid ever moves; shapes form, merge and dissolve as the field passes through. The self-shadowing makes the cavities and overhangs legible in a way a flat-lit grid would not.
+      </p>
+      <div class="math-block">{"\\[ r = \\tfrac{1}{2}\\Delta f \\cdot \\operatorname{smoothstep}\\big(\\tau,\\; \\tau + 0.35,\\; \\rho(p + \\tfrac{w}{4}\\,\\nabla \\times \\psi - u t\\,\\hat{y})\\big) \\]"}</div>
+      <p>
+        Here {"\\( \\Delta \\)"} is the grid spacing, {"\\( f \\)"} the <em>Sphere size</em>, {"\\( \\tau \\)"} the threshold, {"\\( w \\)"} the warp and {"\\( u \\)"} the rise speed. Since there is no history to replay, a particle costs five noise evaluations, against a hundred or more in the other demos. The flow pass stays under a millisecond, and the count is limited by drawing rather than by the field.
+      </p>
+      <div class="page-note">
+        <strong>Density.</strong> {"\\( \\rho \\)"} is two octaves of simplex noise, the second at 2.03× frequency and half weight, rising about 1.5× as fast as the first so the detail shifts against the larger shapes.
+        <br /><br />
+        <strong>Empty cells.</strong> At the default threshold most grid points have radius 0. They still occupy a texel and a vertex, but the vertex shader rejects them before rasterization, so their cost is a texel fetch.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Method</strong> — point sprites or instanced quads for the camera pass.</li>
+            <li><strong>Grid size</strong> — grid points per edge of the cube, from 16³ to 128³ (2.1 million spheres). Find max raises this one.</li>
+            <li><strong>Sphere size</strong> — largest radius as a fraction of half the grid spacing {"\\( f \\)"}. Above 1, neighbouring spheres overlap.</li>
+            <li><strong>Speed</strong> — playback rate.</li>
+            <li><strong>Threshold</strong> — density {"\\( \\tau \\)"} at which spheres start to appear. Lower values fill the cube; higher values leave thin fragments.</li>
+            <li><strong>Noise frequency</strong> — noise features per world unit.</li>
+            <li><strong>Rise speed</strong> — upward drift {"\\( u \\)"} of the density field.</li>
+            <li><strong>Warp</strong> — how far curl noise displaces the density lookup {"\\( w \\)"}; it makes the rising shapes twist.</li>
+            <li><strong>Field evolution</strong> — how fast the warping curl field changes.</li>
+            <li><strong>Map size, Filter, Ground, Show map, Record</strong> — as in the plume.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+</PageLayout>

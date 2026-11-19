@@ -1,0 +1,151 @@
+---
+import PageLayout from '../layouts/PageLayout.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<PageLayout title="Environment maps" slug="environment-maps">
+  <div class="monologue">
+    A sphere shows every direction at once. Give each direction a colour and a hundred thousand spheres become a hundred thousand tiny portraits of the world around them.
+  </div>
+
+  <div class="prose">
+    <p>
+      Both demos below take the <a href={`${base}/noise-flow#plume`}>curl-noise plume</a> and replace its studio lights with an environment map: a texture that stores a colour for every direction in space. A sphere's surface point looks up that texture along its normal or its reflection vector and takes the colour it finds. The first demo carries over environment maps from the geom project; the second builds skies — clear, sunset, cloudy, overcast, night, aurora and underwater.
+    </p>
+
+    <div class="subhead">One texture for every direction</div>
+    <p>
+      The map is equirectangular, like a world map: horizontal position is the azimuth around the vertical axis, vertical position is the elevation. A direction {"\\( d \\)"} becomes a texture coordinate with
+    </p>
+    <div class="math-block">{"\\[ u = \\frac{\\operatorname{atan2}(d_z, d_x)}{2\\pi} + \\frac{1}{2}, \\qquad v = \\frac{\\arcsin d_y}{\\pi} + \\frac{1}{2} \\]"}</div>
+    <p>
+      A fragment pass fills the map before anything else is drawn: one fragment per texel turns its {"\\( (u, v) \\)"} back into a direction and evaluates the environment there. Static maps render once; animated ones — drifting clouds, twinkling stars, moving water — render every frame, still as a pure function of time. The map is 2048×1024 in 16-bit float, so a sun can be dozens of times brighter than white and still reflect as a highlight rather than a flat patch.
+    </p>
+    <p>
+      After the pass, the GPU builds the map's mipmap chain. Each level halves the resolution, so sampling at level {"\\( k \\)"} returns the map blurred over roughly {"\\( 2^k \\)"} texels. <em>Blur</em> picks that level: low values give sharp reflections, high values the soft colour of light arriving from a whole region of the sky.
+    </p>
+    <div class="page-note">
+      <strong>The seam.</strong> {"\\( \\operatorname{atan2} \\)"} jumps from {"\\( \\pi \\)"} to {"\\( -\\pi \\)"} behind the scene, so neighbouring pixels can ask for {"\\( u \\approx 1 \\)"} and {"\\( u \\approx 0 \\)"}. With automatic mip selection, the GPU reads that jump as extreme minification and samples the smallest mip level, which leaves a line of wrong colour. Every lookup here uses <code>textureLod</code> with an explicit level, and horizontal wrapping is set to repeat, so the seam never shows.
+      <br /><br />
+      <strong>Resolution.</strong> The background is the map itself, seen through each pixel's view ray. At 2048 texels for 360°, the map has about 5.7 texels per degree; a 1080p view with a 65° field of view has about 30 pixels per degree, so the backdrop is slightly soft. Stars are the first thing to show it.
+    </div>
+
+    <div class="subhead">Normal or reflection</div>
+    <p>
+      Looking up the map along the normal {"\\( n \\)"} gives a colour that depends only on which way the surface faces: every sphere shows the same gradient, and a whole cloud of spheres takes on the map's colours as one material. Looking up along the reflection {"\\( r = v - 2(n \\cdot v)\\,n \\)"} of the view direction {"\\( v \\)"} gives a mirror: the colour depends on where the camera stands, and each sphere shows a tiny fisheye image of the world behind the viewer.
+    </p>
+    <p>
+      The sampled colour {"\\( E \\)"} can play three roles. In <em>Paint</em>, the geom approach, it is the surface's colour, lit by the key light. In <em>Light</em>, it is light arriving at a white surface, which with a high <em>Blur</em> approximates the sky's diffuse illumination. In <em>Mirror</em>, it is reflected directly:
+    </p>
+    <div class="math-block">{"\\[ \\begin{aligned} \\text{Paint:}\\;& E\\,(0.4\\,a + 0.75\\,s\\,(n\\cdot l)\\,C) \\\\ \\text{Light:}\\;& 0.8\\,(E\\,a + s\\,(n\\cdot l)\\,C) \\\\ \\text{Mirror:}\\;& 0.9\\,E\\,a\\,F \\end{aligned} \\]"}</div>
+    <p>
+      Here {"\\( l \\)"} and {"\\( C \\)"} are the direction and colour of the environment's sun, {"\\( s \\)"} is its shadow-map visibility, and {"\\( a = \\operatorname{mix}(1, s, \\text{occlusion}) \\)"} lets the sun's shadow dim the environment light too. A Blinn-Phong highlight from the sun is added in every mode.
+    </p>
+
+    <div class="subhead">Each environment brings its own sun</div>
+    <p>
+      The shadows still come from one shadow map, as in the plume. The shadow-casting light is part of the environment now: the softbox in the studio, the sun at noon or at sunset, the moon at night, the light above the surface under water. Every frame, the light's orthographic frustum is refitted around the floor and the plume's volume as seen from that direction. A low sun spreads the floor across many more texels than a high one, so the frustum grows and the shadow-map resolution per unit drops.
+    </p>
+    <div class="page-note">
+      <strong>Frustum fit.</strong> The floor's four corners (it is 8 × 8 units) and the top four corners of the plume's bounding box are projected into light space; the frustum is the smallest square that holds them, with depth range from the nearest to the farthest. The shadow bias adds three texels' worth of world distance, {"\\( 3\\,h/\\text{res} \\)"} for frustum half-width {"\\( h \\)"}, to the sphere-radius term, since texels grow with the frustum.
+      <br /><br />
+      <strong>Tone mapping.</strong> The scene is lit in linear HDR values, scaled by <em>Exposure</em>, and compressed with the ACES filmic curve (Krzysztof Narkowicz's fit) before gamma. Bright skies roll off smoothly instead of clipping to white.
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="geom">
+    <div class="demo-header">
+      <h2>Geom environments</h2>
+      <a href={`${base}/demos/env-geom/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/env-geom/index.html?embedded`} title="Geom environments" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        The geom project used environment maps as a colour scheme rather than a place: the map decides which colour each surface direction gets, and lights sculpt the shape in that colour. Five of those maps are reproduced here, and the default <em>Paint</em> shading with a <em>Normal</em> lookup is geom's own setup.
+      </p>
+      <p>
+        <strong>OKLCH hue sphere.</strong> Azimuth maps to hue and elevation to lightness, from black straight down to white straight up. At every hue and lightness the chroma is the largest that still fits in the sRGB gamut, found by a 20-step binary search in OKLCH, a colour space designed so equal steps look equally different. The result is a sphere of colour as saturated as a screen can show, with perceptually even hue steps. Spheres in the plume pick up the hue of the direction their lit side faces, and the camera sees the hue opposite the one behind the plume, since a sphere's front looks back toward the viewer.
+      </p>
+      <p>
+        <strong>CIELAB hue sphere.</strong> The same construction in CIELAB, the older perceptual space. CIELAB's hues are spaced less evenly: blue drifts toward purple as chroma rises, and its yellows and greens take up a different share of the circle.
+      </p>
+      <p>
+        <strong>Anisotropic wave and drifting caustic.</strong> In geom's sound-reactive environment, a 2D colour fill is drawn to a texture and wrapped around the scene as an equirectangular map. The fill is mirrored at its middle, so its left and right edges match where the map wraps. The two fills here follow geom's: twelve plane waves squeezed horizontally, and seven drifting waves sharpened into bands. A slow, smooth level for each band replaces the audio spectrum.
+      </p>
+      <p>
+        <strong>Studio softboxes.</strong> The studio lighting used throughout this site, rebuilt as an environment: the key and fill lights become rectangular softboxes in their directions, and a thin cool strip near the horizon stands in for the blue Fresnel rim. In <em>Paint</em>, most of the map is near black and the spheres turn dark; <em>Light</em> or <em>Mirror</em> shows the rig as it is meant to be seen, as reflections of bright panels.
+      </p>
+      <div class="page-note">
+        <strong>The key light.</strong> All five maps use the site's standard key direction for shadows. In <em>Paint</em>, only the side of each sphere that faces it is lit at full strength, so the colours the plume shows are mostly those around that direction in the map. <em>Rotation</em> turns the map and the key together, so the lit side keeps its hue while the shadowed sides and the backdrop sweep through the rest of the circle.
+        <br /><br />
+        <strong>Ground.</strong> The floor is lit by the colour straight up in the map plus the key light, so on the hue spheres it is white, and on the fills it takes their colour overhead.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Environment</strong> — OKLCH hue sphere, CIELAB hue sphere, anisotropic wave, drifting caustic, or studio softboxes.</li>
+            <li><strong>Shading</strong> — Paint (the map is the surface colour), Light (the map is incoming light on a white surface), or Mirror (the map is reflected).</li>
+            <li><strong>Lookup</strong> — sample the map along the surface normal or along the reflected view ray.</li>
+            <li><strong>Blur (mip level)</strong> — mipmap level of the lookup, from 0 (sharp) to 8 (a few texels for the whole map).</li>
+            <li><strong>Exposure</strong> — brightness multiplier before tone mapping.</li>
+            <li><strong>Sun strength</strong> — multiplier on the shadow-casting light.</li>
+            <li><strong>Occlusion</strong> — how much the sun's shadow also darkens the environment light. 0 leaves shadowed spheres lit by the map; 1 darkens them as much as the sun.</li>
+            <li><strong>Rotation (°/s)</strong> — turns the map, and its sun, about the vertical axis.</li>
+            <li><strong>Background</strong> — the map itself, the map dimmed to 5%, or black.</li>
+            <li><strong>Method, Count, Radius, Speed, Turbulence, Rise speed, Field evolution, Lifetime</strong> — the plume, as on <a href={`${base}/noise-flow#plume`}>Noise flow</a>.</li>
+            <li><strong>Map size, Filter</strong> — shadow map resolution and PCF kernel.</li>
+            <li><strong>Ground</strong> — shows the shadow-receiving floor.</li>
+            <li><strong>Show env map</strong> — draws the equirectangular map in the bottom-right corner, tone-mapped.</li>
+            <li><strong>Find max, Record, canvas drag and scroll</strong> — Find max raises Count while the frame rate holds 55 fps; Record captures video (see <a href={`${base}/particle-rendering#recording`}>Recording</a>); drag orbits the camera and scroll zooms.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="skies">
+    <div class="demo-header">
+      <h2>Skies</h2>
+      <a href={`${base}/demos/env-sky/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/env-sky/index.html?embedded`} title="Skies" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        A sky is the environment map nature provides. These seven are procedural: each is a function of direction (and time) built from gradients, a sun or moon, and noise, with no photographs. With <em>Light</em> shading, the spheres take their colour from the sky the way real objects do — warm on the sun side, blue from the open sky above, darker where they face the ground.
+      </p>
+      <p>
+        <strong>Clear day.</strong> A gradient from pale haze at the horizon to deep blue at the zenith, plus a sun with two halos: a broad glow and a tight one, standing in for the forward scattering of haze. <strong>Sunset.</strong> The same structure, but the horizon colour depends on azimuth — orange toward the sun, mauve away from it — and thin streaks of cloud are lit from below on the sun's side. The sun sits 6° above the horizon, in view, so the plume is backlit and its shadow stretches toward the camera.
+      </p>
+      <p>
+        <strong>Cloudy sky.</strong> Clouds lie on a flat layer overhead: a view direction {"\\( d \\)"} meets it at {"\\( (d_x, d_z)/d_y \\)"}, and five octaves of drifting noise there give the density. To light a cloud, the shader samples the density again a little toward the sun; where the cloud thickens in that direction, light has to pass through more of it, so that side turns grey. Thin edges facing the sun get a silver lining. <strong>Overcast.</strong> No visible sun, only a weak light from above and a grey dome brighter at the top: the CIE standard overcast sky is three times as bright at the zenith as at the horizon. With shadows that weak, <em>Occlusion</em> is what gives the plume its depth.
+      </p>
+      <p>
+        <strong>Night sky.</strong> Stars come from hashing a fine grid over directions: a few cells get a star of random brightness, colour and twinkle rate. A band of extra stars and dust along a tilted circle suggests the Milky Way, and a moon casts faint blue shadows. <strong>Aurora.</strong> Curtains of light hang on several stacked layers: on each, a wavy line across the view direction, broken into vertical rays by noise, green on the lowest layers and violet higher up. <strong>Underwater.</strong> Looking up from below the surface, the sky is squeezed into Snell's window, a disc about 48.6° in radius; outside it, the water itself fades from blue-green to black. Ripples on the surface make caustic-like brightness in the window, and shafts fan out from the sun.
+      </p>
+      <div class="page-note">
+        <strong>Land.</strong> Below the horizon, the map shows a grey ground of albedo 0.3, lit by the sky colour at the zenith plus the sun, under a thin band of horizon haze. The floor plane uses the same formula, then fades into the map at its edge, so the near ground and the distant land meet with no seam. Under water, the band of haze is ten times wider, and the seabed fades into blue.
+        <br /><br />
+        <strong>Cost.</strong> Animated skies re-render all 2 million texels every frame and rebuild the mipmaps. The cloud and aurora skies run dozens of noise evaluations per texel, and the pass takes a few milliseconds. The stats line counts it together with the plume's position pass.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Environment</strong> — clear day, sunset, cloudy sky, overcast, night sky, aurora, or underwater.</li>
+            <li><strong>Shading, Lookup, Blur, Exposure, Occlusion, Background</strong> — as in the first demo. <em>Light</em> with a normal lookup is the default here; <em>Mirror</em> with a reflection lookup turns the plume into chrome beads.</li>
+            <li><strong>Sun strength</strong> — multiplier on the sky's sun or moon, which also lights the land in the map.</li>
+            <li><strong>Rotation (°/s)</strong> — turns the sky about the vertical axis; the sun, and with it the shadows, move along.</li>
+            <li><strong>Method, Count, Radius, Speed, Turbulence, Rise speed, Field evolution, Lifetime, Map size, Filter, Ground, Show env map, Find max, Record</strong> — as in the first demo.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+</PageLayout>

@@ -26,6 +26,20 @@ const navItems: NavItem[] = [
       { label: 'Recording',            href: '#recording' },
     ]
   },
+  { label: 'Noise flow',         href: `${base}/noise-flow`,                slug: 'noise-flow',
+    subLinks: [
+      { label: 'Curl-noise plume',  href: '#plume' },
+      { label: 'Streamline beads',  href: '#streamlines' },
+      { label: 'Flow on a sphere',  href: '#sphere-flow' },
+      { label: 'Noise lattice',     href: '#lattice' },
+    ]
+  },
+  { label: 'Environment maps',   href: `${base}/environment-maps`,          slug: 'environment-maps',
+    subLinks: [
+      { label: 'Geom environments', href: '#geom' },
+      { label: 'Skies',             href: '#skies' },
+    ]
+  },
   // Sketches: dev-only pages, compiled out of production builds.
   ...(import.meta.env.DEV ? [
   ] : []),
