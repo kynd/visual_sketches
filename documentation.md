@@ -95,6 +95,8 @@ render(0);                            // poster frame
 
 **Layout.** No title is drawn on the canvas. `fitPanel()` keeps the params panel clear of the stats label: when one column would reach within 12 px of the label, the panel switches to a CSS grid with `grid-auto-flow: column` and as many rows per column as fit (rows get `min-height: 22px` so the columns line up). It runs on load, after web fonts load, on every parameter change and when the UI is shown.
 
+**Canvas size.** The top bar's size select (`SIZES`: 1920×1080, 1080×1920, 1600×1200, 1200×1600, 1080×1080) sets the drawing buffer to that resolution; CSS scales the canvas to the largest rectangle of the same shape that fits the frame (`.canvas-wrap`, 1920×1080, or 960×540 embedded), centred. The embedded view therefore renders as many pixels as the full-size one. `?size=1080x1920` in the URL sets the start; `shell.setSize('1600x1200')` and `shell.size` work from code. `OrbitCamera` treats its fov as spanning the shorter side, so portrait views widen vertically instead of cropping. The panel and stats stay on the frame (`shell.frame`, i.e. `#overlay`); `shell.overlay` is `.canvas-layer`, a layer that tracks the canvas rectangle, for captions that belong to the image.
+
 **UI toggle.** The *UI* button (or the H key, outside form fields) toggles `.ui-hidden` on `.canvas-wrap`: everything in `#overlay` except the message box is hidden, plus Find max and the fps meter (class `ui-hide`) and the bar's scrim. UI, Record and play/pause stay, and so does the recorder panel. `shell.setUi(bool)` sets it from code.
 
 ### Param specs
@@ -123,7 +125,7 @@ Attached to every demo by `mountShell`. The **Record** button toggles a panel (t
 | Frame-accurate PNG (.zip) | Same stepping; each frame is copied to a 2D canvas (the WebGL drawing buffer is cleared after the task) and saved as PNG into a streaming `fflate` `Zip` with `ZipPassThrough` (no recompression). | Lossless frames for compositing. Large: the zip lives in memory until saved. |
 | Realtime | `canvas.captureStream(fps)` → `MediaRecorder` (MP4/H.264 when supported, else WebM). Plays the demo; stops at *Duration* or on Stop. | Quick capture of interactive sessions (camera drags, param tweaks). Frames drop/duplicate if rendering is slow. |
 
-- **Size**: frame-accurate modes can set `canvas.width/height` to 1920×1080 or 3840×2160 for the recording and restore afterwards. Demos must read canvas size every frame.
+- **Size**: frame-accurate modes record at the canvas resolution or at 2× on each side, resizing `canvas.width/height` for the recording and restoring them afterwards. `attachRecorder` returns `{ updateSizes }`, which the shell calls when the canvas size changes, to refresh the option labels. Demos must read canvas size every frame.
 - **Codec**: tries H.264 High profile levels 5.2 → 4.0, then Main/Baseline, via `VideoEncoder.isConfigSupported`.
 - Only the WebGL canvas is captured — no HTML overlay.
 - Libraries are loaded with dynamic `import()` from jsDelivr on first use.
@@ -220,6 +222,7 @@ Noise: webgl-noise `snoise(vec3, out grad)` (analytic gradient). `curlNoise(p, t
 - **Land** (envs ≥ 5, below the horizon): `0.3·(env(zenith) + uSunCol·max(sun.y, 0))` under a haze band (0.06 rad; 0.6 under water). The ground plane uses the same formula with the zenith texel, then fades into the background, so they meet without a seam.
 - **Sun**: `SUN` table in `env-plume.js` — direction (env frame), colour, gain per env. *Rotation* turns the env (`uEnvRot`) and the sun together. `ParticleScene.setLight(dir, pts)` refits a square orthographic frustum around the floor corners and the plume's top corners every frame; bias adds `3·half/res`.
 - **Shading** (`ENV_SHADING`): `E = envSample(normal or reflect(rd, n), uBlur)`, `a = mix(1, shadow, uOcclusion)`. Paint `E·(0.4a + 0.75·s·(n·l)·C)`, Light `0.8·(E·a + s·(n·l)·C)`, Mirror `0.9·E·a·(0.6 + 0.4(1−n·v)⁵)`, plus a Blinn-Phong sun highlight. Output: exposure → ACES (Narkowicz) → gamma.
+- **Camera orbit**: `OrbitCamera.yawOffset` is set every frame to `2π·t / orbit` (0 when off) and added to the dragged yaw, so the orbit is a pure function of time.
 - **Passes**: env (unit 2) → plume positions (unit 1) → sun depth (unit 0) → background (`backgroundShaders`, view ray from `uCamRot` + `uProj`) → ground (`envGroundShaders`) → spheres (`ENV_LIGHTING`) → optional env inset.
 
 `shaderHead(defines, extra)` in `glsl.js` returns header + shared uniforms/functions for shaders outside the uber-shader.

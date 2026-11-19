@@ -95,6 +95,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Sun strength</strong> — multiplier on the shadow-casting light.</li>
             <li><strong>Occlusion</strong> — how much the sun's shadow also darkens the environment light. 0 leaves shadowed spheres lit by the map; 1 darkens them as much as the sun.</li>
             <li><strong>Rotation (°/s)</strong> — turns the map, and its sun, about the vertical axis.</li>
+            <li><strong>Camera orbit</strong> — circles the camera around the plume's vertical axis, one full turn every N seconds (Off at 0). The angle is {"\\( 360° \\cdot t / N \\)"} added to wherever the camera was dragged, so recordings reproduce it exactly. The map stays put, so the sky and the sun's position on screen sweep past as the camera turns.</li>
             <li><strong>Background</strong> — the map itself, the map dimmed to 5%, or black.</li>
             <li><strong>Method, Count, Radius, Speed, Turbulence, Rise speed, Field evolution, Lifetime</strong> — the plume, as on <a href={`${base}/noise-flow#plume`}>Noise flow</a>.</li>
             <li><strong>Map size, Filter</strong> — shadow map resolution and PCF kernel.</li>
@@ -102,6 +103,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Show env map</strong> — draws the equirectangular map in the bottom-right corner, tone-mapped.</li>
             <li><strong>Find max, Record, canvas drag and scroll</strong> — Find max raises Count while the frame rate holds 55 fps; Record captures video (see <a href={`${base}/particle-rendering#recording`}>Recording</a>); drag orbits the camera and scroll zooms.</li>
             <li><strong>UI</strong> — shows or hides everything except Record and play/pause (also the H key).</li>
+            <li><strong>Canvas size</strong> (top bar) — rendering resolution: 1920×1080, 1080×1920, 1600×1200, 1200×1600 or 1080×1080, scaled to fit the view.</li>
           </ul>
         </div>
       </details>
@@ -140,10 +142,10 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
         <div class="shape-desc">
           <ul>
             <li><strong>Environment</strong> — clear day, sunset, cloudy sky, overcast, night sky, aurora, or underwater.</li>
-            <li><strong>Shading, Lookup, Blur, Exposure, Occlusion, Background</strong> — as in the first demo. <em>Light</em> with a normal lookup is the default here; <em>Mirror</em> with a reflection lookup turns the plume into chrome beads.</li>
+            <li><strong>Shading, Lookup, Blur, Exposure, Occlusion, Camera orbit, Background</strong> — as in the first demo. <em>Light</em> with a normal lookup is the default here; <em>Mirror</em> with a reflection lookup turns the plume into chrome beads.</li>
             <li><strong>Sun strength</strong> — multiplier on the sky's sun or moon, which also lights the land in the map.</li>
             <li><strong>Rotation (°/s)</strong> — turns the sky about the vertical axis; the sun, and with it the shadows, move along.</li>
-            <li><strong>Method, Count, Radius, Speed, Turbulence, Rise speed, Field evolution, Lifetime, Map size, Filter, Ground, Show env map, Find max, Record, UI</strong> — as in the first demo.</li>
+            <li><strong>Method, Count, Radius, Speed, Turbulence, Rise speed, Field evolution, Lifetime, Map size, Filter, Ground, Show env map, Find max, Record, UI, Canvas size</strong> — as in the first demo.</li>
           </ul>
         </div>
       </details>

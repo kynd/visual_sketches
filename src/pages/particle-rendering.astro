@@ -71,6 +71,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Find max</strong> — starts playback and raises the count by half an octave per second while the frame rate stays at 55 fps or above; it stops one step below the first count that drops under. Pressing it again stops the search.</li>
             <li><strong>Record</strong> — opens the recorder (see <a href="#recording">Recording</a>).</li>
             <li><strong>UI</strong> — shows or hides the parameter panel, stats, fps meter, inset caption and Find max; the H key does the same. Record and play/pause stay. Maps drawn into the canvas (Show map) stay too, since they are part of the image.</li>
+            <li><strong>Canvas size</strong> (top bar) — rendering resolution: 1920×1080 (16:9), 1080×1920 (9:16), 1600×1200 (4:3), 1200×1600 (3:4) or 1080×1080 (1:1). The canvas always renders at that resolution and is scaled to fit the view, centred, so the embedded view draws as many pixels as the full-size one. The camera's field of view spans the shorter side, so a portrait canvas shows more above and below rather than less to the sides. Adding <code>?size=1080x1920</code> to a demo's URL picks the starting size.</li>
             <li><strong>Canvas</strong> — drag to orbit the camera, scroll to zoom. Both work while paused.</li>
             <li><strong>Stats</strong> (bottom left) — method, particle count, GPU time, and the triangle count for quads and meshes.</li>
           </ul>
@@ -118,7 +119,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Lookup</strong> — per pixel (fragment shader) or per particle (vertex shader) shadow lookup for the spheres. The ground always looks up per pixel.</li>
             <li><strong>Ground</strong> — shows the shadow-receiving floor.</li>
             <li><strong>Show map</strong> — draws the shadow map in the bottom-right corner, nearer depths brighter. The inset appears in recordings too.</li>
-            <li><strong>Find max, Record, UI, canvas drag and scroll</strong> — as in the first demo.</li>
+            <li><strong>Find max, Record, UI, Canvas size, canvas drag and scroll</strong> — as in the first demo.</li>
           </ul>
         </div>
       </details>
@@ -164,7 +165,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Density</strong> — the absorption factor {"\\( k \\)"}: how much light one full texel of coverage blocks. 0 turns shadows off.</li>
             <li><strong>Ground</strong> — shows the shadow-receiving floor.</li>
             <li><strong>Show map</strong> — draws the total coverage seen from the light (the deepest slice) in the bottom-right corner. The inset appears in recordings too.</li>
-            <li><strong>Find max, Record, UI, canvas drag and scroll</strong> — as in the first demo.</li>
+            <li><strong>Find max, Record, UI, Canvas size, canvas drag and scroll</strong> — as in the first demo.</li>
           </ul>
         </div>
       </details>
@@ -186,14 +187,14 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
       <div class="page-note">
         <strong>MP4 or image sequence.</strong> At 40 Mbps, H.264 of these scenes is visually lossless, and a 10-second 1080p clip stays around 50 MB. A PNG sequence of the same clip is several hundred megabytes, and the browser holds the whole zip in memory until it saves, so it suits short clips. Choose PNG when the frames need further processing; choose MP4 otherwise.
         <br /><br />
-        <strong>What gets recorded.</strong> Only the WebGL canvas — not the control bar, panels or stats. The <em>Size</em> option renders at 1920×1080 or 3840×2160 even from the embedded 960×540 view, by resizing the drawing buffer for the duration of the recording. Libraries load on first use from jsDelivr: <code>mp4-muxer</code> for MP4 and <code>fflate</code> for zip.
+        <strong>What gets recorded.</strong> Only the WebGL canvas — not the control bar, panels or stats. Every demo renders at the canvas resolution chosen in the top bar, even in the embedded view; the <em>Size</em> option can double it on each side (3840×2160 from 1920×1080) by resizing the drawing buffer for the duration of the recording. Libraries load on first use from jsDelivr: <code>mp4-muxer</code> for MP4 and <code>fflate</code> for zip.
       </div>
       <details>
         <summary>Recorder controls</summary>
         <div class="shape-desc">
           <ul>
             <li><strong>Mode</strong> — frame-accurate MP4, frame-accurate PNG sequence (.zip), or realtime capture (MP4 where the browser supports it, otherwise WebM).</li>
-            <li><strong>Size</strong> — frame-accurate modes only: record at the canvas size, 1920×1080, or 3840×2160.</li>
+            <li><strong>Size</strong> — frame-accurate modes only: record at the canvas resolution, or at twice it on each side (3840×2160 for a 1920×1080 canvas, 2160×3840 for 1080×1920).</li>
             <li><strong>Frame rate</strong> — output frames per second, default 60. In realtime mode this is the capture rate requested from the browser.</li>
             <li><strong>Duration</strong> — length of the clip in seconds. Realtime recording stops after this long, or earlier on Stop.</li>
             <li><strong>Start at</strong> — frame-accurate modes only: begin at the demo's current time, or at {"\\( t = 0 \\)"}. Parameter and camera settings at the moment of recording apply throughout.</li>

@@ -56,9 +56,8 @@ export function attachRecorder({ canvas, wrap, loop, render, button, name }) {
       </select></div>
     <div class="params-row" data-for="offline"><span class="params-lbl">Size</span>
       <select class="sd-select params-select" data-k="size">
-        <option value="canvas">Canvas</option>
-        <option value="1920x1080">1920 × 1080</option>
-        <option value="3840x2160">3840 × 2160</option>
+        <option value="1">Canvas</option>
+        <option value="2">2×</option>
       </select></div>
     <div class="params-row"><span class="params-lbl">Frame rate</span>
       <input class="rec-num" data-k="fps" type="number" min="1" max="240" step="1" value="60"><span class="params-val">fps</span></div>
@@ -89,6 +88,16 @@ export function attachRecorder({ canvas, wrap, loop, render, button, name }) {
   };
   $('mode').addEventListener('change', refresh);
   refresh();
+
+  // Recording sizes: the canvas resolution, or twice it on each side.
+  const sizeFor = k => [canvas.width * k, canvas.height * k].map(v => v - v % 2);
+  const updateSizes = () => {
+    for (const o of $('size').options) {
+      const [W, H] = sizeFor(+o.value);
+      o.textContent = o.value === '1' ? `Canvas (${W} × ${H})` : `2× (${W} × ${H})`;
+    }
+  };
+  updateSizes();
 
   button.addEventListener('click', () => {
     const open = panel.classList.toggle('open');
@@ -164,7 +173,7 @@ export function attachRecorder({ canvas, wrap, loop, render, button, name }) {
 
     const prevW = canvas.width, prevH = canvas.height;
     let W = prevW, H = prevH;
-    if (size !== 'canvas') [W, H] = size.split('x').map(Number);
+    if (size !== '1') [W, H] = sizeFor(+size);
     W -= W % 2; H -= H % 2;            // H.264 needs even dimensions
 
     let encoder = null, muxer = null, target = null, zip = null, zipDone = null, ctx2d = null;
@@ -248,4 +257,6 @@ export function attachRecorder({ canvas, wrap, loop, render, button, name }) {
     loop.setTime(t0);
     if (wasPlaying) loop.play(); else loop.redraw();
   }
+
+  return { updateSizes };
 }

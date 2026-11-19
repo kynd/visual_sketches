@@ -118,6 +118,14 @@ export function buildPanel(container, specs, onChange) {
 }
 
 // ── Shell ────────────────────────────────────────────────────────────────
+// Canvas resolutions: [width, height, aspect label]. The drawing buffer is
+// always this size; CSS scales the canvas to fit the frame.
+export const SIZES = [
+  [1920, 1080, '16:9'], [1080, 1920, '9:16'],
+  [1600, 1200, '4:3'], [1200, 1600, '3:4'],
+  [1080, 1080, '1:1'],
+];
+
 export function mountShell({ title, panel, render, onParam, findMax, recordName }) {
   const canvas = document.getElementById('canvas');
   const wrap = canvas.closest('.canvas-wrap');
@@ -126,6 +134,11 @@ export function mountShell({ title, panel, render, onParam, findMax, recordName 
   const bar = el('div', 'ctrl-bar scrim');
   const r1 = el('div', 'ctrl-bar-r1');
   r1.appendChild(el('div', 'ctrl-bar-spacer'));
+  const sizeSel = el('select', 'bar-select ui-hide');
+  sizeSel.title = 'Canvas resolution';
+  sizeSel.setAttribute('aria-label', 'Canvas resolution');
+  for (const [w, h, a] of SIZES) { const o = el('option', '', `${w} × ${h} (${a})`); o.value = `${w}x${h}`; sizeSel.appendChild(o); }
+  r1.appendChild(sizeSel);
   const uiBtn = el('button', 'bar-btn active', 'UI');
   uiBtn.title = 'Show or hide the controls and stats (H)';
   r1.appendChild(uiBtn);
@@ -139,6 +152,10 @@ export function mountShell({ title, panel, render, onParam, findMax, recordName 
   r2.appendChild(fpsEl);
   bar.append(r1, r2);
 
+  // Demo captions belong to the image, so they live in a layer that tracks
+  // the canvas rectangle; the panel and stats stay on the whole frame.
+  const canvasLayer = el('div', 'canvas-layer');
+  wrap.appendChild(canvasLayer);
   const overlay = el('div');
   overlay.id = 'overlay';
   const panelEl = el('div', 'params-panel panel-box');
@@ -183,8 +200,36 @@ export function mountShell({ title, panel, render, onParam, findMax, recordName 
     setUi(wrap.classList.contains('ui-hidden'));
   });
 
+  // Canvas size: the drawing buffer is the chosen resolution; CSS scales the
+  // canvas to the largest rectangle of that shape that fits the frame
+  // (1920×1080, or 960×540 embedded), centred.
+  let size = [SIZES[0][0], SIZES[0][1]];
+  function fitCanvas() {
+    const fw = wrap.clientWidth, fh = wrap.clientHeight, [rw, rh] = size;
+    const k = Math.min(fw / rw, fh / rh), w = rw * k, h = rh * k;
+    const box = { position: 'absolute', left: `${(fw - w) / 2}px`, top: `${(fh - h) / 2}px`, width: `${w}px`, height: `${h}px` };
+    Object.assign(canvas.style, box);
+    Object.assign(canvasLayer.style, box);
+    canvas.width = rw; canvas.height = rh;
+  }
+  function setSize(value, redraw = true) {
+    const m = /^(\d+)\s*[x×]\s*(\d+)$/.exec(String(value).trim());
+    const s = (m && SIZES.find(([w, h]) => w === +m[1] && h === +m[2])) || SIZES[0];
+    size = [s[0], s[1]];
+    sizeSel.value = `${s[0]}x${s[1]}`;
+    fitCanvas();
+    recorder?.updateSizes();
+    if (redraw) loop.redraw();
+  }
+  sizeSel.addEventListener('change', () => setSize(sizeSel.value));
+  let recorder = null;
+  // ?size=1600x1200 in the URL picks the starting resolution.
+  setSize(new URLSearchParams(location.search).get('size') || '', false);
+
   const shell = {
-    canvas, wrap, loop, params, overlay,
+    canvas, wrap, loop, params, overlay: canvasLayer, frame: overlay,
+    get size() { return size; },
+    setSize,
     fps: null,
     setStats(name, fn) { statName.textContent = name; statFn.textContent = fn; },
     setUi,
@@ -225,7 +270,7 @@ export function mountShell({ title, panel, render, onParam, findMax, recordName 
     shell._onFps?.(fps);
   };
 
-  attachRecorder({ canvas, wrap, loop, render, button: recBtn, name: recordName || 'demo' });
+  recorder = attachRecorder({ canvas, wrap, loop, render, button: recBtn, name: recordName || 'demo' });
   fitPanel();
   document.fonts?.ready.then(fitPanel);   // row heights change once the web fonts load
 

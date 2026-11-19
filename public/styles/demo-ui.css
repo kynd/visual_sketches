@@ -258,6 +258,10 @@ html, body { background: #000; overflow: hidden; }
 
 /* UI toggle: hide everything but the UI, Record and play/pause buttons. */
 .ui-hidden #overlay > :not(.demo-msg) { display: none !important; }
+.ui-hidden .canvas-layer { display: none; }
 .ui-hidden .ui-hide { visibility: hidden; }
 .ui-hidden .bar-btn.ui-hide { display: none; }
 .ui-hidden .ctrl-bar.scrim { background: none; }
+
+/* Captions that belong to the canvas image (e.g. inset labels); positioned over the canvas by demo-shell.js. */
+.canvas-layer { position: absolute; inset: 0; pointer-events: none; }

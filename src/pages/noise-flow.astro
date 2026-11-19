@@ -90,6 +90,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Show map</strong> — draws the shadow map in the bottom-right corner.</li>
             <li><strong>Find max, Record, canvas drag and scroll</strong> — Find max raises Count while the frame rate holds 55 fps; Record captures video (see <a href={`${base}/particle-rendering#recording`}>Recording</a>); drag orbits the camera and scroll zooms.</li>
             <li><strong>UI</strong> — shows or hides everything except Record and play/pause (also the H key).</li>
+            <li><strong>Canvas size</strong> (top bar) — rendering resolution: 1920×1080, 1080×1920, 1600×1200, 1200×1600 or 1080×1080, scaled to fit the view.</li>
           </ul>
         </div>
       </details>
@@ -131,7 +132,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Noise frequency</strong> — noise features per world unit; higher values coil the lines more tightly.</li>
             <li><strong>Field evolution</strong> — how fast the field, and with it every line, changes shape.</li>
             <li><strong>Containment</strong> — strength {"\\( c \\)"} of the soft wall at radius 1. At 0, lines wander off freely.</li>
-            <li><strong>Map size, Filter, Ground, Show map, Find max, Record, UI</strong> — as in the plume.</li>
+            <li><strong>Map size, Filter, Ground, Show map, Find max, Record, UI, Canvas size</strong> — as in the plume.</li>
           </ul>
         </div>
       </details>
@@ -174,7 +175,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Field evolution</strong> — how fast the systems change and drift.</li>
             <li><strong>Lifetime, Steps per life</strong> — as in the plume.</li>
             <li><strong>Solid core</strong> — shows the dark sphere inside the particle shell.</li>
-            <li><strong>Map size, Filter, Ground, Show map, Find max, Record, UI</strong> — as in the plume.</li>
+            <li><strong>Map size, Filter, Ground, Show map, Find max, Record, UI, Canvas size</strong> — as in the plume.</li>
           </ul>
         </div>
       </details>

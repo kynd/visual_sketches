@@ -114,6 +114,8 @@ export function mountEnvPlume({ title, recordName, envs, defaults }) {
     scene.setLight(sunWorld, BOUNDS);
     const L = scene.light;
 
+    // Camera orbit about the vertical axis: one full turn every p.orbit seconds (0 = off).
+    camera.yawOffset = p.orbit > 0 ? 2 * Math.PI * t / p.orbit : 0;
     const U = scene.uniforms({ ...p, formation: '0' }, t, camera, canvas);
     Object.assign(U, {
       uTime: time, uCount: n,
@@ -220,6 +222,8 @@ export function mountEnvPlume({ title, recordName, envs, defaults }) {
       range('sun', 'Sun strength', 0, 3, 0.05, 1),
       range('occlusion', 'Occlusion', 0, 1, 0.01, 0.5),
       range('rotation', 'Rotation (°/s)', -20, 20, 0.5, 0, 1),
+      { id: 'orbit', label: 'Camera orbit', type: 'range', min: 0, max: 120, step: 1, value: 0,
+        format: v => (v > 0 ? `${v} s` : 'Off') },
       { id: 'background', label: 'Background', type: 'select', value: d.background,
         options: [['0', 'Environment'], ['1', 'Dimmed'], ['2', 'Black']] },
       methodSpec(),

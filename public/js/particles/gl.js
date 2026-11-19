@@ -101,6 +101,7 @@ export const mat4 = {
 export class OrbitCamera {
   constructor(canvas, { yaw = 2.3, pitch = 0.3, dist = 4.4, fov = 40, onChange = () => {} } = {}) {
     Object.assign(this, { yaw, pitch, dist, fov: fov * Math.PI / 180, onChange });
+    this.yawOffset = 0;   // added to the dragged yaw; demos set it per frame (e.g. an automatic orbit)
     let drag = null;
     canvas.addEventListener('pointerdown', e => {
       drag = { x: e.clientX, y: e.clientY };
@@ -123,10 +124,12 @@ export class OrbitCamera {
     }, { passive: false });
   }
   matrices(aspect) {
-    const cp = Math.cos(this.pitch);
-    const eye = [this.dist * cp * Math.sin(this.yaw), this.dist * Math.sin(this.pitch), this.dist * cp * Math.cos(this.yaw)];
+    const cp = Math.cos(this.pitch), yaw = this.yaw + this.yawOffset;
+    const eye = [this.dist * cp * Math.sin(yaw), this.dist * Math.sin(this.pitch), this.dist * cp * Math.cos(yaw)];
     const { view, rot } = mat4.lookAt(eye, [0, 0, 0], [0, 1, 0]);
-    const proj = mat4.perspective(this.fov, aspect, 0.05, 60);
+    // fov spans the shorter side, so portrait and square canvases keep the subject in frame.
+    const fovy = aspect >= 1 ? this.fov : 2 * Math.atan(Math.tan(this.fov / 2) / aspect);
+    const proj = mat4.perspective(fovy, aspect, 0.05, 60);
     return { view, rot, proj, eye: new Float32Array(eye) };
   }
 }
