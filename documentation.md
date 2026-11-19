@@ -13,6 +13,7 @@ A collection of small interactive studies in real-time graphics. Each page takes
 | Video | WebCodecs `VideoEncoder` + `mp4-muxer@5.2.1`; `fflate@0.8.2` for PNG zips; `MediaRecorder` for realtime |
 | Noise | Simplex noise with analytic gradient from webgl-noise (Gustavson & McEwan, MIT), inlined in `flow-glsl.js` |
 | Environment maps | Procedural equirectangular maps, ideas from geom (`oklch-envmap.js`, `lab-envmap.js`, sound-fill) |
+| Shapes | geom's SDF primitives (after Inigo Quilez), Platonic solids and implicit surfaces, in `shapes-glsl.js` |
 | Fonts | `Lora` / `Sora` + `Google Sans Code` via Google Fonts |
 | Math rendering | KaTeX `0.16.11` via CDN |
 
@@ -28,7 +29,8 @@ A collection of small interactive studies in real-time graphics. Each page takes
 │   │   ├── [...slug].astro          ← renders other content-collection pages
 │   │   ├── particle-rendering.astro
 │   │   ├── noise-flow.astro
-│   │   └── environment-maps.astro
+│   │   ├── environment-maps.astro
+│   │   └── shape-morphing.astro
 │   ├── content/pages/index.md       ← intro page (placeholder)
 │   └── layouts/PageLayout.astro
 │
@@ -42,7 +44,9 @@ A collection of small interactive studies in real-time graphics. Each page takes
 │   │   ├── flow-sphere/                 index.html, main.js
 │   │   ├── flow-lattice/                index.html, main.js
 │   │   ├── env-geom/                    index.html, main.js
-│   │   └── env-sky/                     index.html, main.js
+│   │   ├── env-sky/                     index.html, main.js
+│   │   ├── shape-particles/             index.html, main.js
+│   │   └── shape-sdf/                   index.html, main.js
 │   ├── js/
 │   │   ├── demo-shell.js
 │   │   ├── recorder.js
@@ -53,7 +57,11 @@ A collection of small interactive studies in real-time graphics. Each page takes
 │   │       ├── flow-glsl.js ← noise-flow position pass: simplex noise + gradient, curl noise, 4 modes
 │   │       ├── flow-demo.js ← mountFlowDemo(), positionTargets(), shadowTargets()
 │   │       ├── env-glsl.js  ← environment maps (equirect generation) + ENV_SHADING
-│   │       └── env-plume.js ← mountEnvPlume(): env pass → plume → sun shadow → env-lit camera pass
+│   │       ├── env-common.js ← Environment (map target + pass), SUN table, envSpecs()
+│   │       ├── env-plume.js ← mountEnvParticles(kernel) / mountEnvPlume(): env → positions → sun shadow → env-lit spheres
+│   │       ├── shapes-glsl.js ← shapeSDF(): 23 shapes from geom (SDF, Platonic, implicit)
+│   │       ├── shapes.js    ← SHAPES list, morphState() timeline, shapeSpecs()
+│   │       └── shape-march.js ← mountShapeMarch(): ray-marched SDF morph with env lighting
 │   └── styles/demo-ui.css
 │
 ├── CLAUDE.md
@@ -93,7 +101,7 @@ render(0);                            // poster frame
 
 `window.demo` is set to the shell for console debugging.
 
-**Layout.** No title is drawn on the canvas. `fitPanel()` keeps the params panel clear of the stats label: when one column would reach within 12 px of the label, the panel switches to a CSS grid with `grid-auto-flow: column` and as many rows per column as fit (rows get `min-height: 22px` so the columns line up). It runs on load, after web fonts load, on every parameter change and when the UI is shown.
+**Layout.** No title is drawn on the canvas. `fitPanel()` keeps the params panel clear of the stats label: when one column would reach within 12 px of the label, the panel switches to a CSS grid with `grid-auto-flow: column` and as many rows per column as fit (rows get `min-height: 22px` so the columns line up). Columns stop short of the recorder panel (300 px kept free on the right); if that still isn't enough, the panel gets a `max-height` and scrolls. It runs on load, after web fonts load, on every parameter change, when a group opens or closes, and when the UI is shown.
 
 **Canvas size.** The top bar's size select (`SIZES`: 1920×1080, 1080×1920, 1600×1200, 1200×1600, 1080×1080) sets the drawing buffer to that resolution; CSS scales the canvas to the largest rectangle of the same shape that fits the frame (`.canvas-wrap`, 1920×1080, or 960×540 embedded), centred. The embedded view therefore renders as many pixels as the full-size one. `?size=1080x1920` in the URL sets the start; `shell.setSize('1600x1200')` and `shell.size` work from code. `OrbitCamera` treats its fov as spanning the shorter side, so portrait views widen vertically instead of cropping. The panel and stats stay on the frame (`shell.frame`, i.e. `#overlay`); `shell.overlay` is `.canvas-layer`, a layer that tracks the canvas rectangle, for captions that belong to the image.
 
@@ -105,9 +113,10 @@ render(0);                            // poster frame
 { id, label, type: 'range',  min, max, step, value, format?: v => string, visible?: values => bool }
 { id, label, type: 'select', value, options: [[value, label], ...], visible? }
 { id, label, type: 'toggle', value: bool, visible? }
+{ type: 'group', label, open?: bool }   // collapsible header for the rows that follow
 ```
 
-Select values are strings. `visible` hides rows that don't apply to the current settings (e.g. *Mesh detail* only for the mesh method).
+Select values are strings. A `group` spec starts a collapsible section that runs to the next group; collapsed rows are hidden like `visible: false` ones. `visible` hides rows that don't apply to the current settings (e.g. *Mesh detail* only for the mesh method).
 
 ### Loop and timing
 
@@ -213,19 +222,27 @@ Noise: webgl-noise `snoise(vec3, out grad)` (analytic gradient). `curlNoise(p, t
 | `surface` | Unit sphere; scalar noise (2 octaves) gradient `g` projected to the tangent plane; `v = uFlow·(n × g + uGather·g)`; renormalized after each step. Lifetimes as in `plume`; fade in over the first 35% of life. |
 | `lattice` | `uSide³` grid in a cube of half-size `uHalf`; radius `½·spacing·uFill·smoothstep(uThreshold, +0.35, ρ)`, with ρ two noise octaves sampled at `p + uWarp·curl/4 − uRise·t·ŷ`. |
 
-### Environment maps (`env-glsl.js`, `env-plume.js`)
+### Environment maps (`env-glsl.js`, `env-common.js`, `env-plume.js`)
 
-`mountEnvPlume({ title, recordName, envs, defaults })` — the curl-noise plume (`flow-glsl.js` `plume` mode, Noise frequency 1.0, 24 steps) lit by an environment map.
+`mountEnvParticles({ title, recordName, envs, defaults, kernel, closed })` — particles from any `flow-glsl.js` position kernel lit by an environment map. `kernel` = `{ mode, group, specs, count, radius, uniforms(p, time), info(p, time) }`; panel groups are Lighting, Particles, the kernel's group and Shadows, and `closed` lists those that start collapsed. `mountEnvPlume({ title, recordName, envs, defaults })` is the curl-noise plume kernel (Noise frequency 1.0, 24 steps). The map target, its pass, the `SUN` table and the lighting controls (`envSpecs`) live in `env-common.js` (`Environment.frame(p, t)` → sun + uniforms; `Environment.bind()` re-renders when needed and binds unit 2).
 
 - **Map**: 2048×1024 `RGBA16F`, 12 mip levels, `REPEAT` in u. `envMapShaders()` renders environment `uEnv` per texel from `dirFromUv()`: `u = atan(z, x)/2π + ½`, `v = asin(y)/π + ½`. Re-rendered when the env or Sun strength changes, and every frame for animated envs; then `generateMipmap`. All lookups use `textureLod` (no seam at the atan wrap); *Blur* is the LOD.
 - **Envs** (`ENV_LIST`): 0 studio softboxes, 1 OKLCH hue sphere, 2 CIELAB hue sphere (both: azimuth → hue, elevation → lightness, max in-gamut chroma by 20-step bisection, after geom's `oklch-envmap.js` / `lab-envmap.js`), 3 anisotropic wave, 4 drifting caustic (geom sound-fill modes 1 and 3, mirrored at u = ½, smooth per-band levels instead of FFT), 5 clear, 6 sunset, 7 cloudy (cloud layer at `d.xz/d.y`, 5-octave fbm, lit by a density difference toward the sun), 8 overcast (CIE `(1+2 sin θ)/3`), 9 night (hashed stars, Milky Way band, moon), 10 aurora (8 curtain layers across the default view direction), 11 underwater (Snell's window at cos 48.6°, ripples, shafts).
 - **Land** (envs ≥ 5, below the horizon): `0.3·(env(zenith) + uSunCol·max(sun.y, 0))` under a haze band (0.06 rad; 0.6 under water). The ground plane uses the same formula with the zenith texel, then fades into the background, so they meet without a seam.
-- **Sun**: `SUN` table in `env-plume.js` — direction (env frame), colour, gain per env. *Rotation* turns the env (`uEnvRot`) and the sun together. `ParticleScene.setLight(dir, pts)` refits a square orthographic frustum around the floor corners and the plume's top corners every frame; bias adds `3·half/res`.
+- **Sun**: `SUN` table in `env-common.js` — direction (env frame), colour, gain per env. *Rotation* turns the env (`uEnvRot`) and the sun together. `ParticleScene.setLight(dir, pts)` refits a square orthographic frustum around the floor corners and the plume's top corners every frame; bias adds `3·half/res`.
 - **Shading** (`ENV_SHADING`): `E = envSample(normal or reflect(rd, n), uBlur)`, `a = mix(1, shadow, uOcclusion)`. Paint `E·(0.4a + 0.75·s·(n·l)·C)`, Light `0.8·(E·a + s·(n·l)·C)`, Mirror `0.9·E·a·(0.6 + 0.4(1−n·v)⁵)`, plus a Blinn-Phong sun highlight. Output: exposure → ACES (Narkowicz) → gamma.
 - **Camera orbit**: `OrbitCamera.yawOffset` is set every frame to `2π·t / orbit` (0 when off) and added to the dragged yaw, so the orbit is a pure function of time.
 - **Passes**: env (unit 2) → plume positions (unit 1) → sun depth (unit 0) → background (`backgroundShaders`, view ray from `uCamRot` + `uProj`) → ground (`envGroundShaders`) → spheres (`ENV_LIGHTING`) → optional env inset.
 
 `shaderHead(defines, extra)` in `glsl.js` returns header + shared uniforms/functions for shaders outside the uber-shader.
+
+### Shape morphing (`shapes-glsl.js`, `shapes.js`, `shape-march.js`)
+
+- **Shapes** (`shapeSDF(id, p, t)`, shape space radius ≈ 0.9): 0–11 SDF primitives after geom `sdf-functions.glsl` (sphere, rounded box, box frame, torus, capped torus, link, hexagonal prism, capped cone, death star, cut hollow sphere, pyramid, rhombus); 12–15 Platonic solids after geom `platonic-functions.glsl` (tetra, octa, dodeca, icosa, scaled 0.9–0.95); 16–22 implicit surfaces after geom's scalar / moving scalar fields (gyroid sheet, Schwarz P, tanglecube at c = 11.8 ± 0.8, Chmutov T₄, harmonic sphere, pulsing torus, oscillating spheroid). Implicit distance = `f / |∇f|` (tetrahedral gradient, ε = 0.002); gyroid `|d| − 0.03`; gyroid and Schwarz P clipped by `|p| − 0.9`.
+- **Placement**: `shapeToWorld(q, spin, tilt, scale)` = scale · Rx(tilt) · Ry(spin) · q; `worldToShape` inverts it.
+- **Timeline** (`morphState(p, t)`): slots `shape1`–`shape5` (`-1` = None) in order, looping; each cycle = Hold + Morph; blend `s` = smootherstep `6x⁵ − 15x⁴ + 10x³`. Returns `{ a, b, mix, label }`.
+- **Particle morph** (`flow-glsl.js` `morph` mode via `mountEnvParticles`): seed uniform in a ball of radius 1.1 (shape space); `project(id, seed)` = `uProject` steps of `q −= d ∇d/|∇d|`; position = `mix(projA, projB, s)` → world, plus `0.08 · uSwirl · sin(πs) · curlNoise`.
+- **SDF morph** (`mountShapeMarch`): full-screen pass, `d = mix(dA, dB, s) · scale` in shape space; bounding sphere radius `1.3 · scale`; sphere tracing with 0.8 under-stepping, hit when `d < 0.0004 t`, up to *March steps*; tetrahedral normal (ε = 0.001); soft shadow `min(k·h/t)` over ≤ 64 steps toward the sun (skipped when the shadow ray misses the bounding sphere); 5-tap AO along the normal (×0.7 blend); ground plane at y = −1.25 with the same formula as `envGroundShaders`. Shading `envShade()` / `envOutput()`.
 
 ### GPU timing
 

@@ -5,6 +5,8 @@
 //
 // Mode defines: MODE_PLUME | MODE_STREAM | MODE_SURFACE | MODE_LATTICE
 
+import { SHAPES_GLSL } from './shapes-glsl.js';
+
 const HEADER = /* glsl */`#version 300 es
 precision highp float;
 precision highp int;
@@ -262,7 +264,54 @@ vec4 particle(uint id) {
 }
 `;
 
-const MODES = { plume: PLUME, stream: STREAM, surface: SURFACE, lattice: LATTICE };
+// ── Shape morph ──────────────────────────────────────────────────────────
+// Every particle owns a random seed point near the shape. It is projected onto
+// shape A and onto shape B (Newton steps along the distance gradient), and the
+// particle sits on the blend of the two projections. While the blend runs,
+// curl noise lifts the particles off the surface and sets them down again.
+const MORPH = SHAPES_GLSL + /* glsl */`
+uniform int   uShapeA;
+uniform int   uShapeB;
+uniform float uMix;       // 0 = shape A, 1 = shape B (already eased)
+uniform float uScale;     // world size of shape space
+uniform float uSpin;      // rotation about the shape's y axis, radians
+uniform float uTilt;      // then a tilt about x, radians
+uniform float uSwirl;     // curl-noise displacement during a morph
+uniform int   uProject;   // projection steps
+
+vec3 shapeGrad(int id, vec3 q) {
+  const vec2 k = vec2(1.0, -1.0);
+  const float e = 0.003;
+  return k.xyy * shapeSDF(id, q + k.xyy * e, uTime) + k.yyx * shapeSDF(id, q + k.yyx * e, uTime)
+       + k.yxy * shapeSDF(id, q + k.yxy * e, uTime) + k.xxx * shapeSDF(id, q + k.xxx * e, uTime);
+}
+
+// Closest-point projection: step against the gradient by the distance.
+vec3 project(int id, vec3 q) {
+  for (int i = 0; i < 12; i++) {
+    if (i >= uProject) break;
+    float d = shapeSDF(id, q, uTime);
+    vec3 g = shapeGrad(id, q);
+    q -= d * g / max(length(g), 1e-6);
+  }
+  return q;
+}
+
+vec4 particle(uint id) {
+  uint s = id * 1664525u + 1013904223u;
+  vec3 seed = randomDir(s) * 1.1 * pow(rnd(s), 1.0 / 3.0);   // uniform in a ball, shape space
+  float sz = uSize * (0.7 + 0.3 * rnd(s));
+  vec3 a = project(uShapeA, seed);
+  vec3 q = a;
+  if (uMix > 0.0 && uShapeB != uShapeA) q = mix(a, project(uShapeB, seed), uMix);
+  vec3 p = shapeToWorld(q, uSpin, uTilt, uScale);
+  float w = sin(3.14159265 * uMix);
+  if (w > 0.0) p += uSwirl * w * 0.08 * curlNoise(p * 0.9 + seed, uTime);
+  return vec4(p, sz);
+}
+`;
+
+const MODES = { plume: PLUME, stream: STREAM, surface: SURFACE, lattice: LATTICE, morph: MORPH };
 
 export function flowShaders(mode) {
   const vs = HEADER + /* glsl */`

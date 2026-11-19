@@ -1,0 +1,132 @@
+---
+import PageLayout from '../layouts/PageLayout.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<PageLayout title="Shape morphing" slug="shape-morphing">
+  <div class="monologue">
+    A torus and a dodecahedron have nothing in common, except that both can say how far away they are. Blend those answers and one shape flows into the other.
+  </div>
+
+  <div class="prose">
+    <p>
+      The two demos below take shapes from the geom project and morph between them, lit with the environment maps from <a href={`${base}/environment-maps`}>Environment maps</a>. Up to five shapes can be chosen; each holds for a moment, then morphs into the next, and the cycle loops. The first demo builds every shape from particles that travel between surfaces. The second ray-marches the blended shape directly.
+    </p>
+
+    <div class="subhead">Twenty-three shapes, one interface</div>
+    <p>
+      The shapes come from three families in geom. <strong>Signed distance functions</strong> — sphere, rounded box, box frame, torus, capped torus, link, hexagonal prism, capped cone, death star, cut hollow sphere, pyramid and rhombus — are Inigo Quilez's primitives, with proportions close to geom's. <strong>Platonic solids</strong> — tetrahedron, octahedron, dodecahedron and icosahedron — come from geom's Platonic duals demo. <strong>Implicit surfaces</strong> — gyroid, Schwarz P, tanglecube, Chmutov {"\\( T_4 \\)"}, harmonic sphere, pulsing torus and oscillating spheroid — are geom's scalar fields, several of them animated as in its moving-field demo.
+    </p>
+    <p>
+      Both demos need one thing from a shape: the signed distance {"\\( d(p) \\)"} from a point to its surface, negative inside. The first two families provide it directly. An implicit surface only provides a field {"\\( f \\)"} whose zero set is the surface, and the size of {"\\( f \\)"} has no fixed meaning. Dividing by the gradient turns it into a distance estimate, exact near the surface where {"\\( f \\)"} is close to linear:
+    </p>
+    <div class="math-block">{"\\[ d(p) \\approx \\frac{f(p)}{|\\nabla f(p)|} \\]"}</div>
+    <div class="page-note">
+      <strong>Triply periodic surfaces.</strong> The gyroid and Schwarz P fill all of space, so both are intersected with a ball: {"\\( \\max(d, |p| - 0.9) \\)"}. The gyroid is used as a thin sheet, {"\\( |d| - 0.03 \\)"}, and Schwarz P as a solid.
+      <br /><br />
+      <strong>Gradients.</strong> Every gradient here is a tetrahedral difference: four samples at {"\\( p + \\varepsilon k_i \\)"} with {"\\( k_i \\)"} the corners of a tetrahedron, one fewer than central differences need. An implicit shape's distance therefore costs five evaluations of {"\\( f \\)"}.
+      <br /><br />
+      <strong>Placement.</strong> All shapes live in a shape space where they fit a ball of radius about 0.9. <em>Spin</em> turns that space about its own vertical axis, <em>Tilt</em> leans it toward the camera so rings and links don't sit edge-on, and <em>Shape size</em> scales it into the world.
+    </div>
+
+    <div class="subhead">The timeline</div>
+    <p>
+      With shapes {"\\( S_1 \\ldots S_n \\)"} chosen, each cycle lasts <em>Hold</em> plus <em>Morph</em> seconds. During the hold the scene is the current shape; during the morph it blends from {"\\( S_k \\)"} toward {"\\( S_{k+1} \\)"}, and the last shape morphs back into the first. The blend weight follows smootherstep, so the motion starts and ends at rest:
+    </p>
+    <div class="math-block">{"\\[ s = 6x^5 - 15x^4 + 10x^3, \\qquad x = \\frac{\\text{time into the morph}}{\\text{Morph}} \\]"}</div>
+    <p>
+      Like everything on this site, the timeline is a pure function of time, so recordings reproduce it frame for frame.
+    </p>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="particle-morph">
+    <div class="demo-header">
+      <h2>Particle morph</h2>
+      <a href={`${base}/demos/shape-particles/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/shape-particles/index.html?embedded`} title="Particle morph" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        To cover a surface with particles, each particle starts from a fixed random seed point in a ball around the shape and walks to the nearest point of the surface. One step moves the point against the distance gradient by the distance itself; for an exact distance function a single step lands on the surface, and a few more fix up estimates and corners:
+      </p>
+      <div class="math-block">{"\\[ q \\leftarrow q - d(q)\\,\\frac{\\nabla d(q)}{|\\nabla d(q)|} \\]"}</div>
+      <p>
+        Every particle does this twice, once for each shape in the current morph, from the same seed. Its position is the blend of the two projections. Because both start from the same seed, a particle on the left of the torus ends up on the left of the dodecahedron: the morph moves particles over short distances instead of shuffling them across the scene. While the blend runs, curl noise from the <a href={`${base}/noise-flow#plume`}>plume</a> lifts the particles off the surface in proportion to {"\\( \\sin(\\pi s) \\)"}, so the cloud loosens between shapes and settles onto the next one.
+      </p>
+      <p>
+        The rest is the environment-lit pipeline from the previous page: a position pass writes every particle into a float texture, a shadow map from the environment's sun, and spheres shaded from the map.
+      </p>
+      <div class="page-note">
+        <strong>Density.</strong> Seeds are uniform in a ball, but projection is not area-preserving. Every seed in the region nearest a convex corner or edge lands on that corner or edge, so the edges of a box or a dodecahedron collect more particles than its faces. Inside a shape, seeds project onto the nearest part of the surface, so thin parts (a link, a box frame) are covered evenly while bulky shapes are denser on their outer surface.
+        <br /><br />
+        <strong>Cost.</strong> With <em>Projection steps</em> {"\\( k \\)"}, a particle evaluates {"\\( 5k \\)"} distances per shape (one value and four gradient samples per step), or {"\\( 25k \\)"} field samples for an implicit surface. During a hold only one shape is projected.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Environment, Shading, Lookup, Blur, Exposure, Sun strength, Occlusion, Rotation, Camera orbit, Background</strong> — the environment lighting, as on <a href={`${base}/environment-maps#geom`}>Environment maps</a>.</li>
+            <li><strong>Method, Count, Radius</strong> — sphere drawing method, particle count (4K to 2M) and largest sphere radius.</li>
+            <li><strong>Speed</strong> — playback rate of the timeline, spin and animated shapes.</li>
+            <li><strong>Shape 1–5</strong> — the shapes to cycle through, in order. Slots 2–5 can be None; with a single shape there is no morph.</li>
+            <li><strong>Hold (s)</strong> — how long each shape stays still before morphing.</li>
+            <li><strong>Morph (s)</strong> — how long each morph takes.</li>
+            <li><strong>Shape size</strong> — world size of the shapes.</li>
+            <li><strong>Spin (°/s)</strong> — rotation of the shapes about their own vertical axis.</li>
+            <li><strong>Tilt (°)</strong> — lean of the shapes toward the camera.</li>
+            <li><strong>Swirl</strong> — how far curl noise lifts the particles mid-morph. 0 makes the particles slide straight from one surface to the other.</li>
+            <li><strong>Projection steps</strong> — gradient steps toward each surface. One is enough for exact distance functions; implicit surfaces and sharp edges need more.</li>
+            <li><strong>Map size, Filter, Ground, Show env map</strong> — shadow map resolution, PCF kernel, the floor, and the map inset.</li>
+            <li><strong>Find max, Record, UI, Canvas size</strong> — as on <a href={`${base}/particle-rendering#impostors`}>Particle rendering</a>; drag orbits the camera and scroll zooms.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────────────────────── -->
+  <section class="demo-section" id="sdf-morph">
+    <div class="demo-header">
+      <h2>SDF morph</h2>
+      <a href={`${base}/demos/shape-sdf/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/shape-sdf/index.html?embedded`} title="SDF morph" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        With distance functions, the morph itself is one line: blend the two distances.
+      </p>
+      <div class="math-block">{"\\[ d_s(p) = (1 - s)\\,d_A(p) + s\\,d_B(p) \\]"}</div>
+      <p>
+        The surface of the blend is where the weighted distances cancel. Away from both shapes it bulges where either one does; a hole that only one shape has shrinks and closes as {"\\( s \\)"} grows. No correspondence between the shapes is needed, and the topology changes freely: the torus's hole fills in, the gyroid's tunnels open out of a solid.
+      </p>
+      <p>
+        A fragment shader draws it by sphere tracing. Each pixel's ray starts where it enters a bounding sphere and steps forward by the distance the field reports, which is always safe for an exact distance. A blend of distances, and an implicit surface's estimate, can overstate the true distance, so every step is shortened to 0.8 of the reported value. The normal is the field's gradient at the hit point, and shading is the same <code>envShade()</code> the particles use.
+      </p>
+      <div class="page-note">
+        <strong>Soft shadows.</strong> A shadow ray marches toward the sun through the same field. Instead of a yes/no answer it keeps the smallest ratio {"\\( k\\,d/t \\)"} of distance to travelled length — how narrowly the ray misses the shape — which approximates a penumbra (Inigo Quilez's soft-shadow method). <em>Shadow sharpness</em> is {"\\( k \\)"}. The ground marches a shadow ray too, but only when it passes through the bounding sphere.
+        <br /><br />
+        <strong>Ambient occlusion.</strong> Five samples step out along the normal; where the field reports less distance than the step, nearby surface is crowding the point. The result darkens creases and the inside of tunnels.
+        <br /><br />
+        <strong>Cost.</strong> Every pixel inside the bounding sphere may run up to <em>March steps</em> evaluations of two shapes, plus four for the normal, up to 64 for the shadow and five for occlusion. Implicit shapes cost five field samples per evaluation, so morphs involving them are the slowest. The demo renders at the full canvas resolution chosen in the top bar.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Environment, Shading, Lookup, Blur, Exposure, Sun strength, Occlusion, Rotation, Camera orbit, Background</strong> — the environment lighting, as in the first demo. Occlusion applies to the soft shadow.</li>
+            <li><strong>Speed, Shape 1–5, Hold, Morph, Shape size, Spin, Tilt</strong> — as in the first demo.</li>
+            <li><strong>March steps</strong> — the most steps a ray may take. Too few leave holes where rays graze a surface.</li>
+            <li><strong>Shadow sharpness</strong> — {"\\( k \\)"} in the soft-shadow estimate; higher values give harder shadow edges.</li>
+            <li><strong>Ground, Show env map</strong> — the floor and the map inset.</li>
+            <li><strong>Record, UI, Canvas size</strong> — as in the first demo.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+</PageLayout>

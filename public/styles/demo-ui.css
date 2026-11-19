@@ -265,3 +265,13 @@ html, body { background: #000; overflow: hidden; }
 
 /* Captions that belong to the canvas image (e.g. inset labels); positioned over the canvas by demo-shell.js. */
 .canvas-layer { position: absolute; inset: 0; pointer-events: none; }
+
+/* Collapsible group header in the params panel */
+.params-group {
+  display: block; width: 100%; min-height: 20px; padding: 2px 0 0; text-align: left;
+  background: none; border: none; border-top: 1px solid rgba(255,255,255,0.08); cursor: pointer;
+  font-family: var(--font-ui); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: rgba(255,255,255,0.50);
+}
+.params-group:first-child { border-top: none; }
+.params-group:hover { color: rgba(255,255,255,0.85); }

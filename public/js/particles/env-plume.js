@@ -1,50 +1,36 @@
-// The curl-noise plume lit by an environment map. Each frame:
-//   0. environment pass — one environment rendered into an equirectangular
-//      RGBA16F texture with mipmaps (only when it changes or is animated)
-//   1. position pass   — the plume kernel from flow-glsl.js
+// Particles lit by an environment map. Each frame:
+//   0. environment pass — env-common.js (only when the map changes or is animated)
+//   1. position pass   — a kernel from flow-glsl.js (the plume, shape morphing…)
 //   2. light pass      — shadow depth from the environment's sun
 //   3. camera pass     — background, ground, spheres shaded from the map
+//
+// mountEnvParticles() takes the kernel as configuration; mountEnvPlume() is
+// the curl-noise plume used on the Environment maps page.
 
 import { createGL, OrbitCamera, GpuTimer, Program } from './gl.js';
 import { ParticleScene, METHOD_LABEL } from './scene.js';
-import { particleShaders, shaderHead, KEY_LIGHT } from './glsl.js';
+import { particleShaders, shaderHead } from './glsl.js';
 import { flowShaders } from './flow-glsl.js';
-import { ENV_LIST, ENV_SHADING, envMapShaders, backgroundShaders, envGroundShaders, envInsetShaders } from './env-glsl.js';
+import { ENV_SHADING, backgroundShaders, envGroundShaders, envInsetShaders } from './env-glsl.js';
+import { CAM_YAW, ENV_UNIT, Environment, envSpecs } from './env-common.js';
 import { POS_W, positionTargets, shadowTargets, methodSpec, countSpec, radiusSpec, speedSpec, range } from './flow-demo.js';
 import { mountShell } from '../demo-shell.js';
 
-const ENV_W = 2048, ENV_H = 1024, ENV_LEVELS = 12;
-const CAM_YAW = 2.3;
-
-// Direction toward a light at 'offset' degrees of azimuth from the default
-// camera's view direction and 'elev' degrees above the horizon.
-function fromView(offset, elev) {
-  const az = CAM_YAW + offset * Math.PI / 180, el = elev * Math.PI / 180;
-  return [-Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az)];
-}
-
-// The shadow-casting light that belongs to each environment (environment frame).
-const SUN = {
-  studio:     { dir: KEY_LIGHT,           col: [1.0, 1.0, 1.0],    gain: 1.0 },
-  oklch:      { dir: KEY_LIGHT,           col: [1.0, 1.0, 1.0],    gain: 1.0 },
-  lab:        { dir: KEY_LIGHT,           col: [1.0, 1.0, 1.0],    gain: 1.0 },
-  wave:       { dir: KEY_LIGHT,           col: [1.0, 1.0, 1.0],    gain: 1.0 },
-  caustic:    { dir: KEY_LIGHT,           col: [1.0, 1.0, 1.0],    gain: 1.0 },
-  clear:      { dir: fromView(140, 50),   col: [1.0, 0.93, 0.82],  gain: 1.5 },
-  sunset:     { dir: fromView(18, 6),     col: [1.0, 0.50, 0.22],  gain: 2.2 },
-  cloudy:     { dir: fromView(-120, 38),  col: [1.0, 0.95, 0.88],  gain: 1.1 },
-  overcast:   { dir: fromView(60, 55),    col: [0.9, 0.93, 1.0],   gain: 0.2 },
-  night:      { dir: fromView(-25, 28),   col: [0.55, 0.65, 1.0],  gain: 0.3 },
-  aurora:     { dir: fromView(150, 25),   col: [0.45, 0.85, 0.65], gain: 0.18 },
-  underwater: { dir: fromView(120, 72),   col: [0.55, 0.9, 1.0],   gain: 1.1 },
-};
-
-// World-space points the light frustum must cover: the floor and the plume's volume.
+// World-space points the light frustum must cover: the floor and the particles' volume.
 const BOUNDS = [];
 for (const x of [-4, 4]) for (const z of [-4, 4]) BOUNDS.push([x, -1.25, z]);
 for (const x of [-1.6, 1.6]) for (const z of [-1.6, 1.6]) BOUNDS.push([x, 2.6, z]);
 
-export function mountEnvPlume({ title, recordName, envs, defaults }) {
+// kernel: {
+//   mode      — flow-glsl.js mode name
+//   specs     — extra panel controls (after Method / Count / Radius / Speed)
+//   count, radius — defaults for those controls
+//   uniforms(p, time) → position-pass uniforms (time = t × Speed)
+//   info(p, time)     → text for the stats line
+//   group             — panel group label for the kernel's controls
+// }
+// closed: panel groups that start collapsed ('Lighting', 'Particles', 'Shadows', or kernel.group).
+export function mountEnvParticles({ title, recordName, envs, defaults, kernel, closed = [] }) {
   const canvas = document.getElementById('canvas');
   const gl = createGL(canvas);
   const scene = new ParticleScene(gl);
@@ -56,107 +42,61 @@ export function mountEnvPlume({ title, recordName, envs, defaults }) {
 
   const posTarget = positionTargets(gl);
   const shadowTarget = shadowTargets(gl);
-  let flowProg = null, envProg = null, bgProg = null, groundProg = null, insetProg = null;
+  let flowProg = null, bgProg = null, groundProg = null, insetProg = null, environment = null;
   const particleProgs = new Map();
   if (floatOK) {
-    let s = flowShaders('plume');      flowProg = new Program(gl, s.vs, s.fs);
-    s = envMapShaders();               envProg = new Program(gl, s.vs, s.fs);
+    let s = flowShaders(kernel.mode);  flowProg = new Program(gl, s.vs, s.fs);
     const head = shaderHead([], ENV_SHADING);
     s = backgroundShaders(head);       bgProg = new Program(gl, s.vs, s.fs);
     s = envGroundShaders(head);        groundProg = new Program(gl, s.vs, s.fs);
     s = envInsetShaders(head);         insetProg = new Program(gl, s.vs, s.fs);
+    environment = new Environment(gl, () => scene.drawQuad());
   }
   function particleProg(method) {
-    const defs = [scene.methodDefine(method), 'PASS_CAMERA', 'SHADOW_MAP_PIXEL', 'POS_TEXTURE', 'ENV_LIGHTING'];
     if (!particleProgs.has(method)) {
-      const s = particleShaders(defs, ENV_SHADING);
+      const s = particleShaders([scene.methodDefine(method), 'PASS_CAMERA', 'SHADOW_MAP_PIXEL', 'POS_TEXTURE', 'ENV_LIGHTING'], ENV_SHADING);
       particleProgs.set(method, new Program(gl, s.vs, s.fs));
     }
     return particleProgs.get(method);
   }
 
-  // Environment target: mipmapped so blurred lookups are a single textureLod.
-  let env = null, envKey = '';
-  if (floatOK) {
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texStorage2D(gl.TEXTURE_2D, ENV_LEVELS, gl.RGBA16F, ENV_W, ENV_H);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    const fbo = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    env = { tex, fbo };
-  }
-
-  const envById = Object.fromEntries(ENV_LIST.map(([id, key, label, animated]) => [key, { id, key, label, animated }]));
   const ms = timer => (timer.ms === null ? '—' : timer.ms.toFixed(2));
 
   function render(t) {
     if (!floatOK) return;
     const p = shell.params.values;
-    const E = envById[p.env];
-    const sun = SUN[p.env];
     const n = Math.round(2 ** p.count);
     const res = parseInt(p.res, 10);
     const sm = shadowTarget(res);
     const pt = posTarget(n);
     const time = t * p.speed;
 
-    // The environment turns about the vertical axis; the sun turns with it.
-    const rot = t * p.rotation * Math.PI / 180;
-    const c = Math.cos(rot), s = Math.sin(rot);
-    const [lx, ly, lz] = sun.dir;
-    const sunWorld = [c * lx - s * lz, ly, s * lx + c * lz];
-    scene.setLight(sunWorld, BOUNDS);
+    const f = environment.frame(p, t);
+    scene.setLight(f.sunWorld, BOUNDS);
     const L = scene.light;
 
     // Camera orbit about the vertical axis: one full turn every p.orbit seconds (0 = off).
     camera.yawOffset = p.orbit > 0 ? 2 * Math.PI * t / p.orbit : 0;
     const U = scene.uniforms({ ...p, formation: '0' }, t, camera, canvas);
-    Object.assign(U, {
+    Object.assign(U, f.uniforms, {
       uTime: time, uCount: n,
       uPosTex: 1, uPosW: POS_W, uIdOffset: 0,
       uShadowMap: 0, uLightRes: res, uPcf: parseInt(p.pcf, 10),
       uShadowBias: (p.radius * 0.6 + 0.004 + 3 * L.half / res) / (L.far - L.near),
-      uEnvTex: 2, uEnvRot: rot, uBlur: p.blur, uOcclusion: p.occlusion, uExposure: p.exposure,
-      uSunCol: new Float32Array(sun.col.map(v => v * sun.gain * p.sun)),
-      uShading: parseInt(p.shading, 10), uLookup: parseInt(p.lookup, 10), uBgMode: parseInt(p.background, 10),
     });
 
     flowTimer.poll();
     flowTimer.begin();
-    gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.BLEND);
+    environment.bind(f, p, t);                         // pass 0
 
-    // Pass 0 — environment, only when it changed (static maps render once).
-    const key = `${E.key}|${p.sun}|${E.animated ? t : ''}`;
-    gl.activeTexture(gl.TEXTURE2);
-    if (key !== envKey) {
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, env.fbo);
-      gl.viewport(0, 0, ENV_W, ENV_H);
-      envProg.use().setAll({ uEnv: E.id, uTime: t, uSunDir: new Float32Array(sun.dir), uSunCol: U.uSunCol });
-      scene.drawQuad();
-      gl.bindTexture(gl.TEXTURE_2D, env.tex);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      envKey = key;
-    }
-    gl.bindTexture(gl.TEXTURE_2D, env.tex);
-
-    // Pass 1 — plume positions.
+    // Pass 1 — particle positions.
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, pt.fbo);
     gl.viewport(0, 0, POS_W, pt.h);
-    flowProg.use().setAll({
-      uTime: time, uCount: n, uPosW: POS_W, uCoreR: 0,
-      uFlow: p.flow, uRise: p.rise, uFreq: 1.0, uEvolve: p.evolve,
-      uLife: p.life, uSteps: 24, uSize: p.radius, uEmitR: 0.3, uContain: 0.25,
-    });
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+    flowProg.use().setAll({ uTime: time, uCount: n, uPosW: POS_W, uCoreR: 0, uSize: p.radius, ...kernel.uniforms(p, time) });
     scene.drawQuad();
     flowTimer.end();
 
@@ -201,39 +141,28 @@ export function mountEnvPlume({ title, recordName, envs, defaults }) {
 
     caption.style.display = p.inset ? '' : 'none';
     caption.style.bottom = `${Math.round(canvas.clientHeight * 0.23) + 6}px`;
-    const gpu = flowTimer.available ? `GPU: env + flow ${ms(flowTimer)} ms + shading ${ms(drawTimer)} ms` : 'GPU timer not exposed by this browser';
-    shell.setStats(`${METHOD_LABEL[p.method]} · ${n.toLocaleString()} spheres · ${E.label}`, `${gpu} · shadow map ${res}²`);
+    const gpu = flowTimer.available ? `GPU: env + positions ${ms(flowTimer)} ms + shading ${ms(drawTimer)} ms` : 'GPU timer not exposed by this browser';
+    const info = kernel.info ? kernel.info(p, time) : f.E.label;
+    shell.setStats(`${METHOD_LABEL[p.method]} · ${n.toLocaleString()} spheres · ${info}`, `${gpu} · shadow map ${res}²`);
   }
 
   const caption = document.createElement('div');
   caption.className = 'inset-caption';
   caption.textContent = 'Environment map (equirectangular)';
 
-  const d = { shading: '0', lookup: '0', blur: 0, exposure: 1.2, background: '1', ...defaults };
   shell = mountShell({
     title, recordName, render, findMax: { id: 'count' },
     panel: [
-      { id: 'env', label: 'Environment', type: 'select', value: d.env, options: envs.map(k => [k, envById[k].label]) },
-      { id: 'shading', label: 'Shading', type: 'select', value: d.shading,
-        options: [['0', 'Paint'], ['1', 'Light'], ['2', 'Mirror']] },
-      { id: 'lookup', label: 'Lookup', type: 'select', value: d.lookup, options: [['0', 'Normal'], ['1', 'Reflection']] },
-      range('blur', 'Blur (mip level)', 0, 8, 0.25, d.blur),
-      range('exposure', 'Exposure', 0.2, 4, 0.05, d.exposure),
-      range('sun', 'Sun strength', 0, 3, 0.05, 1),
-      range('occlusion', 'Occlusion', 0, 1, 0.01, 0.5),
-      range('rotation', 'Rotation (°/s)', -20, 20, 0.5, 0, 1),
-      { id: 'orbit', label: 'Camera orbit', type: 'range', min: 0, max: 120, step: 1, value: 0,
-        format: v => (v > 0 ? `${v} s` : 'Off') },
-      { id: 'background', label: 'Background', type: 'select', value: d.background,
-        options: [['0', 'Environment'], ['1', 'Dimmed'], ['2', 'Black']] },
+      { type: 'group', label: 'Lighting', open: !closed.includes('Lighting') },
+      ...envSpecs(envs, defaults),
+      { type: 'group', label: 'Particles', open: !closed.includes('Particles') },
       methodSpec(),
-      countSpec(16),
-      radiusSpec(0.012),
+      countSpec(kernel.count ?? 16),
+      radiusSpec(kernel.radius ?? 0.012),
       speedSpec(),
-      range('flow', 'Turbulence', 0, 1.5, 0.01, 0.3),
-      range('rise', 'Rise speed', 0, 1, 0.01, 0.36),
-      range('evolve', 'Field evolution', 0, 2, 0.01, 0.12),
-      range('life', 'Lifetime (s)', 1, 10, 0.1, 4.5, 1),
+      ...(kernel.group ? [{ type: 'group', label: kernel.group, open: !closed.includes(kernel.group) }] : []),
+      ...kernel.specs,
+      { type: 'group', label: 'Shadows', open: !closed.includes('Shadows') },
       { id: 'res', label: 'Map size', type: 'select', value: '2048',
         options: [['1024', '1024²'], ['2048', '2048²'], ['4096', '4096²']] },
       { id: 'pcf', label: 'Filter', type: 'select', value: '1',
@@ -246,4 +175,25 @@ export function mountEnvPlume({ title, recordName, envs, defaults }) {
   if (!floatOK) shell.message('This demo needs EXT_color_buffer_float to render into float textures, and this browser does not expose it.');
   render(0);
   return shell;
+}
+
+// The curl-noise plume (Environment maps page).
+export function mountEnvPlume({ title, recordName, envs, defaults }) {
+  return mountEnvParticles({
+    title, recordName, envs, defaults,
+    kernel: {
+      mode: 'plume', group: 'Plume',
+      count: 16, radius: 0.012,
+      specs: [
+        range('flow', 'Turbulence', 0, 1.5, 0.01, 0.3),
+        range('rise', 'Rise speed', 0, 1, 0.01, 0.36),
+        range('evolve', 'Field evolution', 0, 2, 0.01, 0.12),
+        range('life', 'Lifetime (s)', 1, 10, 0.1, 4.5, 1),
+      ],
+      uniforms: p => ({
+        uFlow: p.flow, uRise: p.rise, uFreq: 1.0, uEvolve: p.evolve,
+        uLife: p.life, uSteps: 24, uEmitR: 0.3, uContain: 0.25,
+      }),
+    },
+  });
 }

@@ -40,6 +40,12 @@ const navItems: NavItem[] = [
       { label: 'Skies',             href: '#skies' },
     ]
   },
+  { label: 'Shape morphing',     href: `${base}/shape-morphing`,            slug: 'shape-morphing',
+    subLinks: [
+      { label: 'Particle morph',    href: '#particle-morph' },
+      { label: 'SDF morph',         href: '#sdf-morph' },
+    ]
+  },
   // Sketches: dev-only pages, compiled out of production builds.
   ...(import.meta.env.DEV ? [
   ] : []),

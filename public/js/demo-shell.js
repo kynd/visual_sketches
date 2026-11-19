@@ -69,7 +69,9 @@ export class Loop {
 // ── Parameter panel ──────────────────────────────────────────────────────
 // spec: { id, label, type: 'range'|'select'|'toggle', ...,
 //         visible?: values => bool, format?: v => string }
-export function buildPanel(container, specs, onChange) {
+//     | { type: 'group', label, open?: bool }  — a collapsible header for the rows after it
+// onLayout() is called when a group opens or closes.
+export function buildPanel(container, specs, onChange, onLayout) {
   const values = {};
   const rows = [];
   const api = {
@@ -82,9 +84,25 @@ export function buildPanel(container, specs, onChange) {
       if (!silent) onChange(id, v);
     },
     spec(id) { return specs.find(s => s.id === id); },
-    refresh() { for (const r of rows) r.row.style.display = !r.spec.visible || r.spec.visible(values) ? '' : 'none'; },
+    refresh() {
+      for (const r of rows) {
+        const shown = (!r.group || r.group.open) && (!r.spec.visible || r.spec.visible(values));
+        r.row.style.display = shown ? '' : 'none';
+      }
+    },
   };
+  let group = null;
   for (const spec of specs) {
+    if (spec.type === 'group') {
+      const g = { open: spec.open !== false };
+      const head = el('button', 'params-group');
+      const sync = () => { head.textContent = `${g.open ? '▾' : '▸'} ${spec.label}`; head.setAttribute('aria-expanded', String(g.open)); };
+      head.addEventListener('click', () => { g.open = !g.open; sync(); api.refresh(); onLayout?.(); });
+      sync();
+      container.appendChild(head);
+      group = g;
+      continue;
+    }
     values[spec.id] = spec.value;
     const row = el('div', 'params-row');
     row.appendChild(el('span', 'params-lbl', spec.label));
@@ -110,7 +128,7 @@ export function buildPanel(container, specs, onChange) {
       row.appendChild(btn);
     }
     sync();
-    rows.push({ spec, row, sync });
+    rows.push({ spec, row, sync, group });
     container.appendChild(row);
   }
   api.refresh();
@@ -168,20 +186,28 @@ export function mountShell({ title, panel, render, onParam, findMax, recordName 
   wrap.append(overlay, bar);
 
   const loop = new Loop(t => render(t), playBtn);
-  const params = buildPanel(panelEl, panel, (id, v) => { onParam?.(id, v); loop.redraw(); fitPanel(); });
+  const params = buildPanel(panelEl, panel, (id, v) => { onParam?.(id, v); loop.redraw(); fitPanel(); }, () => fitPanel());
 
   // Keep the panel clear of the stats label: if one column of controls would
-  // reach it, lay the rows out in as many columns as needed.
+  // reach it, lay the rows out in columns. Columns stop short of the recorder
+  // panel on the right; if they still don't fit, the panel scrolls.
+  const REC_ROOM = 300;                                       // recorder panel width + margin
   function fitPanel() {
-    panelEl.style.display = '';
-    panelEl.style.gridTemplateRows = '';
+    Object.assign(panelEl.style, { display: '', gridTemplateRows: '', maxHeight: '', overflowY: '' });
     const top = panelEl.offsetTop;
     const limit = label.offsetTop - 12;                       // stats label's top edge, less a margin
     if (top + panelEl.offsetHeight <= limit) return;
     const rows = [...panelEl.children].filter(r => r.style.display !== 'none');
     const rowH = Math.max(22, ...rows.map(r => r.offsetHeight)) + 6;   // grid rows get min-height 22px
     const pad = panelEl.offsetHeight - panelEl.clientHeight + 20; // borders + padding
-    const perCol = Math.max(1, Math.floor((limit - top - pad + 6) / rowH));
+    let perCol = Math.max(1, Math.floor((limit - top - pad + 6) / rowH));
+    const colW = panelEl.offsetWidth - pad + 20;
+    const room = overlay.clientWidth - panelEl.offsetLeft - REC_ROOM;
+    const maxCols = Math.max(1, Math.floor((room + 20) / (colW + 20)));
+    if (Math.ceil(rows.length / perCol) > maxCols) {
+      perCol = Math.ceil(rows.length / maxCols);
+      Object.assign(panelEl.style, { maxHeight: `${limit - top}px`, overflowY: 'auto' });
+    }
     panelEl.style.display = 'grid';
     panelEl.style.gridTemplateRows = `repeat(${perCol}, auto)`;
   }
