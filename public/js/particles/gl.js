@@ -54,6 +54,9 @@ export class Program {
       case gl.FLOAT_VEC2: gl.uniform2fv(u.loc, v); break;
       case gl.FLOAT_VEC3: gl.uniform3fv(u.loc, v); break;
       case gl.FLOAT_VEC4: gl.uniform4fv(u.loc, v); break;
+      case gl.INT_VEC2:   gl.uniform2iv(u.loc, v); break;
+      case gl.INT_VEC3:   gl.uniform3iv(u.loc, v); break;
+      case gl.INT_VEC4:   gl.uniform4iv(u.loc, v); break;
       case gl.FLOAT_MAT3: gl.uniformMatrix3fv(u.loc, false, v); break;
       case gl.FLOAT_MAT4: gl.uniformMatrix4fv(u.loc, false, v); break;
       default:            gl.uniform1i(u.loc, v); break;   // int, bool, samplers

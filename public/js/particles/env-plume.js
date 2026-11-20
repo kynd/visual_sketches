@@ -28,6 +28,9 @@ for (const x of [-1.6, 1.6]) for (const z of [-1.6, 1.6]) BOUNDS.push([x, 2.6, z
 //   uniforms(p, time) → position-pass uniforms (time = t × Speed)
 //   info(p, time)     → text for the stats line
 //   group             — panel group label for the kernel's controls
+//   bounds            — world points the shadow frustum must cover (default: floor + plume volume)
+//   ground(p, ctx)    → false to hide the floor (ctx: { aspect, camRot })
+//   uniforms and info also receive ctx as their third argument
 // }
 // closed: panel groups that start collapsed ('Lighting', 'Particles', 'Shadows', or kernel.group).
 export function mountEnvParticles({ title, recordName, envs, defaults, kernel, closed = [] }) {
@@ -72,7 +75,7 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
     const time = t * p.speed;
 
     const f = environment.frame(p, t);
-    scene.setLight(f.sunWorld, BOUNDS);
+    scene.setLight(f.sunWorld, kernel.bounds || BOUNDS);
     const L = scene.light;
 
     // Camera orbit about the vertical axis: one full turn every p.orbit seconds (0 = off).
@@ -84,6 +87,8 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
       uShadowMap: 0, uLightRes: res, uPcf: parseInt(p.pcf, 10),
       uShadowBias: (p.radius * 0.6 + 0.004 + 3 * L.half / res) / (L.far - L.near),
     });
+    const ctx = { aspect: canvas.width / canvas.height, camRot: U.uCamRot };
+    const showGround = p.ground && (!kernel.ground || kernel.ground(p, ctx) !== false);
 
     flowTimer.poll();
     flowTimer.begin();
@@ -96,7 +101,7 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
     gl.viewport(0, 0, POS_W, pt.h);
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
-    flowProg.use().setAll({ uTime: time, uCount: n, uPosW: POS_W, uCoreR: 0, uSize: p.radius, ...kernel.uniforms(p, time) });
+    flowProg.use().setAll({ uTime: time, uCount: n, uPosW: POS_W, uCoreR: 0, uSize: p.radius, ...kernel.uniforms(p, time, ctx) });
     scene.drawQuad();
     flowTimer.end();
 
@@ -125,7 +130,7 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
       scene.drawQuad();
     }
     gl.enable(gl.DEPTH_TEST);
-    if (p.ground) {
+    if (showGround) {
       groundProg.use().setAll(U);
       scene.drawQuad();
     }
@@ -145,7 +150,7 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
     caption.style.display = p.inset ? '' : 'none';
     caption.style.bottom = `${Math.round(canvas.clientHeight * 0.23) + 6}px`;
     const gpu = flowTimer.available ? `GPU: env + positions ${ms(flowTimer)} ms + shading ${ms(drawTimer)} ms` : 'GPU timer not exposed by this browser';
-    const info = kernel.info ? kernel.info(p, time) : f.E.label;
+    const info = kernel.info ? kernel.info(p, time, ctx) : f.E.label;
     shell.setStats(`${METHOD_LABEL[p.method]} · ${n.toLocaleString()} spheres · ${info}`, `${gpu} · shadow map ${res}²`);
   }
 

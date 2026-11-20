@@ -269,9 +269,7 @@ vec4 particle(uint id) {
 // shape A and onto shape B (Newton steps along the distance gradient), and the
 // particle sits on the blend of the two projections. While the blend runs,
 // curl noise lifts the particles off the surface and sets them down again.
-const MORPH = SHAPES_GLSL + /* glsl */`
-uniform int   uShapeA;
-uniform int   uShapeB;
+const MORPH_COMMON = SHAPES_GLSL + /* glsl */`
 uniform float uMix;       // 0 = shape A, 1 = shape B (already eased)
 uniform float uScale;     // world size of shape space
 uniform float uSpin;      // rotation about the shape's y axis, radians
@@ -296,6 +294,11 @@ vec3 project(int id, vec3 q) {
   }
   return q;
 }
+`;
+
+const MORPH = MORPH_COMMON + /* glsl */`
+uniform int   uShapeA;
+uniform int   uShapeB;
 
 vec4 particle(uint id) {
   uint s = id * 1664525u + 1013904223u;
@@ -311,7 +314,36 @@ vec4 particle(uint id) {
 }
 `;
 
-const MODES = { plume: PLUME, stream: STREAM, surface: SURFACE, lattice: LATTICE, morph: MORPH };
+// ── Morph conveyor ───────────────────────────────────────────────────────
+// Three particle groups take turns at four places along a line: off-screen
+// before, station 1, station 2, off-screen after. Every morph moves each group
+// one place along while it morphs one step through the shape list, so particles
+// travel in straight lines (no swirl) and a group leaving the far end slips back
+// to the start while it is invisible.
+const CONVEYOR = MORPH_COMMON + /* glsl */`
+uniform ivec3 uGroupA;    // per group: shape it is morphing from
+uniform ivec3 uGroupB;    //            shape it is morphing to
+uniform vec3  uGroupPos;  //            place along the line: −1 before, 0 and 1 the stations, 2 after
+uniform vec3  uAxis;      // world direction of the line (screen right, or screen down)
+uniform float uSpacing;   // world distance between the two stations
+
+vec4 particle(uint id) {
+  int g = int(id % 3u);
+  float x = uGroupPos[g];
+  float vis = 1.0 - smoothstep(0.95, 1.5, abs(x - 0.5));     // shrink to nothing off-screen
+  if (vis <= 0.0) return vec4(0.0);
+  uint s = (id / 3u) * 1664525u + 1013904223u;
+  vec3 seed = randomDir(s) * 1.1 * pow(rnd(s), 1.0 / 3.0);
+  float sz = uSize * (0.7 + 0.3 * rnd(s));
+  int A = uGroupA[g], B = uGroupB[g];
+  vec3 q = project(A, seed);
+  if (uMix > 0.0 && B != A) q = mix(q, project(B, seed), uMix);
+  vec3 p = shapeToWorld(q, uSpin, uTilt, uScale) + uAxis * (x - 0.5) * uSpacing;
+  return vec4(p, sz * vis);
+}
+`;
+
+const MODES = { plume: PLUME, stream: STREAM, surface: SURFACE, lattice: LATTICE, morph: MORPH, conveyor: CONVEYOR };
 
 export function flowShaders(mode) {
   const vs = HEADER + /* glsl */`
