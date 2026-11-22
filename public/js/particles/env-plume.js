@@ -28,11 +28,13 @@ for (const x of [-1.6, 1.6]) for (const z of [-1.6, 1.6]) BOUNDS.push([x, 2.6, z
 //   uniforms(p, time) → position-pass uniforms (time = t × Speed)
 //   info(p, time)     → text for the stats line
 //   group             — panel group label for the kernel's controls
-//   bounds            — world points the shadow frustum must cover (default: floor + plume volume)
+//   bounds            — world points the shadow frustum must cover (default: floor + plume volume),
+//                       or bounds(p, { aspect }) returning them
 //   ground(p, ctx)    → false to hide the floor (ctx: { aspect, camRot })
 //   uniforms and info also receive ctx as their third argument
 // }
 // closed: panel groups that start collapsed ('Lighting', 'Particles', 'Shadows', or kernel.group).
+// defaults also take bg and ground (both default true) for the Background and Ground toggles.
 export function mountEnvParticles({ title, recordName, envs, defaults, kernel, closed = [] }) {
   const canvas = document.getElementById('canvas');
   const gl = createGL(canvas, { alpha: true });
@@ -75,7 +77,9 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
     const time = t * p.speed;
 
     const f = environment.frame(p, t);
-    scene.setLight(f.sunWorld, kernel.bounds || BOUNDS);
+    const aspect = canvas.width / canvas.height;
+    const bounds = typeof kernel.bounds === 'function' ? kernel.bounds(p, { aspect }) : (kernel.bounds || BOUNDS);
+    scene.setLight(f.sunWorld, bounds);
     const L = scene.light;
 
     // Camera orbit about the vertical axis: one full turn every p.orbit seconds (0 = off).
@@ -87,7 +91,7 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
       uShadowMap: 0, uLightRes: res, uPcf: parseInt(p.pcf, 10),
       uShadowBias: (p.radius * 0.6 + 0.004 + 3 * L.half / res) / (L.far - L.near),
     });
-    const ctx = { aspect: canvas.width / canvas.height, camRot: U.uCamRot };
+    const ctx = { aspect, camRot: U.uCamRot };
     const showGround = p.ground && (!kernel.ground || kernel.ground(p, ctx) !== false);
 
     flowTimer.poll();
@@ -161,7 +165,7 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
   shell = mountShell({
     title, recordName, render, findMax: { id: 'count' },
     panel: [
-      bgSpec(),
+      bgSpec(defaults?.bg ?? true),
       { type: 'group', label: 'Lighting', open: !closed.includes('Lighting') },
       ...envSpecs(envs, defaults),
       { type: 'group', label: 'Particles', open: !closed.includes('Particles') },
@@ -176,7 +180,7 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
         options: [['1024', '1024²'], ['2048', '2048²'], ['4096', '4096²']] },
       { id: 'pcf', label: 'Filter', type: 'select', value: '1',
         options: [['0', '1 tap'], ['1', '3×3 taps'], ['2', '5×5 taps']] },
-      { id: 'ground', label: 'Ground', type: 'toggle', value: true },
+      { id: 'ground', label: 'Ground', type: 'toggle', value: defaults?.ground ?? true },
       { id: 'inset', label: 'Show env map', type: 'toggle', value: false },
     ],
   });

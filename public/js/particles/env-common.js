@@ -37,13 +37,13 @@ export const SUN = {
 export const ENV_BY_KEY = Object.fromEntries(ENV_LIST.map(([id, key, label, animated]) => [key, { id, key, label, animated }]));
 export const ALL_ENVS = ENV_LIST.map(e => e[1]);
 
-// Lighting controls. d: defaults for env, shading, lookup, blur, exposure, background.
+// Lighting controls. d: defaults for env, shading, lookup, blur, exposure, rotation, background.
 // The Background toggle sits above the groups: off leaves everything behind
 // the subject transparent (uBgMode 3), which PNG recordings keep as alpha.
-export const bgSpec = () => ({ id: 'bg', label: 'Background', type: 'toggle', value: true });
+export const bgSpec = (value = true) => ({ id: 'bg', label: 'Background', type: 'toggle', value });
 
 export function envSpecs(envs, defaults) {
-  const d = { shading: '0', lookup: '0', blur: 0, exposure: 1.2, background: '1', ...defaults };
+  const d = { shading: '0', lookup: '0', blur: 0, exposure: 1.2, rotation: 0, background: '1', ...defaults };
   return [
     { id: 'env', label: 'Environment', type: 'select', value: d.env, options: envs.map(k => [k, ENV_BY_KEY[k].label]) },
     { id: 'shading', label: 'Shading', type: 'select', value: d.shading, options: [['0', 'Paint'], ['1', 'Light'], ['2', 'Mirror']] },
@@ -52,7 +52,7 @@ export function envSpecs(envs, defaults) {
     range('exposure', 'Exposure', 0.2, 4, 0.05, d.exposure),
     range('sun', 'Sun strength', 0, 3, 0.05, 1),
     range('occlusion', 'Occlusion', 0, 1, 0.01, 0.5),
-    range('rotation', 'Rotation (°/s)', -20, 20, 0.5, 0, 1),
+    range('rotation', 'Rotation (°/s)', -20, 20, 0.5, d.rotation, 1),
     { id: 'orbit', label: 'Camera orbit', type: 'range', min: 0, max: 120, step: 1, value: 0, format: v => (v > 0 ? `${v} s` : 'Off') },
     { id: 'background', label: 'Backdrop', type: 'select', value: d.background, options: [['0', 'Environment'], ['1', 'Dimmed'], ['2', 'Black']] },
   ];

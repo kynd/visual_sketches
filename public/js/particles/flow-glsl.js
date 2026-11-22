@@ -318,20 +318,20 @@ vec4 particle(uint id) {
 // Three particle groups take turns at four places along a line: off-screen
 // before, station 1, station 2, off-screen after. Every morph moves each group
 // one place along while it morphs one step through the shape list, so particles
-// travel in straight lines (no swirl) and a group leaving the far end slips back
-// to the start while it is invisible.
+// travel in straight lines (no swirl). The off-screen places lie far enough out
+// that a shape there is wholly outside the view (main.js sets the spacing), so a
+// group leaving the far end slips back to the start unseen.
 const CONVEYOR = MORPH_COMMON + /* glsl */`
 uniform ivec3 uGroupA;    // per group: shape it is morphing from
 uniform ivec3 uGroupB;    //            shape it is morphing to
 uniform vec3  uGroupPos;  //            place along the line: −1 before, 0 and 1 the stations, 2 after
 uniform vec3  uAxis;      // world direction of the line (screen right, or screen down)
-uniform float uSpacing;   // world distance between the two stations
+uniform float uSpacing;   // world distance between neighbouring places
 
 vec4 particle(uint id) {
   int g = int(id % 3u);
   float x = uGroupPos[g];
-  float vis = 1.0 - smoothstep(0.95, 1.5, abs(x - 0.5));     // shrink to nothing off-screen
-  if (vis <= 0.0) return vec4(0.0);
+  if (x <= -1.0 || x >= 2.0) return vec4(0.0);   // parked off-screen during the hold
   uint s = (id / 3u) * 1664525u + 1013904223u;
   vec3 seed = randomDir(s) * 1.1 * pow(rnd(s), 1.0 / 3.0);
   float sz = uSize * (0.7 + 0.3 * rnd(s));
@@ -339,7 +339,7 @@ vec4 particle(uint id) {
   vec3 q = project(A, seed);
   if (uMix > 0.0 && B != A) q = mix(q, project(B, seed), uMix);
   vec3 p = shapeToWorld(q, uSpin, uTilt, uScale) + uAxis * (x - 0.5) * uSpacing;
-  return vec4(p, sz * vis);
+  return vec4(p, sz);
 }
 `;
 

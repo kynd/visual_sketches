@@ -102,7 +102,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
         The same particles, laid out as a procession. Two shapes stand side by side — top and bottom on a portrait canvas. At every morph the whole row moves one place along: a new shape slides in from the left, the left shape travels to the right while it turns into the next shape in the list, and the right shape slides out. With <em>Swirl</em> gone, every particle moves in a straight line, from its point on one shape at one place to its point on the next shape at the next place.
       </p>
       <p>
-        Three groups of particles are enough to keep the row going. Every third particle belongs to the same group, and the groups take turns at four places: off-screen before the row, the first station, the second, and off-screen after it. A group that leaves the far end shrinks to nothing and reappears off-screen at the start, ready to come in again.
+        Three groups of particles are enough to keep the row going. Every third particle belongs to the same group, and the groups take turns at four places: off-screen before the row, the first station, the second, and off-screen after it. The off-screen places lie far enough out that a shape there is wholly outside the view, so a shape stays whole until it has left the frame, and the group that left the far end jumps back to the start unseen, ready to come in again.
       </p>
       <p>
         The two stations show different shapes from the list, a fixed number of steps apart. If station 1 shows shape {"\\( i \\)"}, station 2 shows {"\\( i - k \\)"}, where {"\\( k \\)"} is the <em>Phase offset</em>. For the moving shape to arrive one step further on — shape {"\\( i + 1 \\)"} at station 2 — station 1 has to advance {"\\( k + 1 \\)"} shapes per move:
@@ -112,16 +112,17 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
         Here {"\\( c \\)"} counts the moves so far. With the default {"\\( k = 1 \\)"} and five shapes, station 1 steps through the list two at a time, and both stations visit every shape within five moves.
       </p>
       <div class="page-note">
-        <strong>Layout.</strong> The row runs along the camera's right vector when the canvas is landscape or square and along its down vector when it is portrait, so it stays aligned with the screen while the camera orbits. The stations sit 40% of the way from the centre to the edge of the view, and the shapes shrink with the spacing on narrower canvases. A vertical row would pass through the floor, so the floor is hidden on portrait canvases.
+        <strong>Layout.</strong> The row runs along the camera's right vector when the canvas is landscape or square and along its down vector when it is portrait, so it stays aligned with the screen while the camera orbits. The off-screen places are 1.5 station spacings from the centre, and a shape there must clear the side of the view frustum: with {"\\( a \\)"} the half-angle of the view along the row and {"\\( X \\)"} the distance at which the frustum's side crosses the shapes' plane, the centre of the shape's bounding ball has to be more than {"\\( R / \\cos a \\)"} past {"\\( X \\)"}. The spacing grows until it is, but never puts the stations closer than 40% of the way from the centre to the edge. The shapes shrink with the view on narrower canvases. A vertical row would pass through the floor, so the floor is hidden on portrait canvases, and the shadow frustum is fitted to the whole row in every direction it can run.
         <br /><br />
-        <strong>Groups.</strong> At the hold of move {"\\( c \\)"}, group {"\\( g \\)"} stands at place {"\\( ((g + c) \\bmod 3) - 1 \\)"}, where −1 is off-screen before, 0 and 1 are the stations, and 2 is off-screen after. Over the last 0.55 station spacings before either off-screen place, a group's spheres shrink to zero, and particles of a hidden group skip the projection entirely.
+        <strong>Groups.</strong> At the hold of move {"\\( c \\)"}, group {"\\( g \\)"} stands at place {"\\( ((g + c) \\bmod 3) - 1 \\)"}, where −1 is off-screen before, 0 and 1 are the stations, and 2 is off-screen after. A group parked at either off-screen place during the hold skips the projection entirely.
       </div>
       <details>
         <summary>Controls</summary>
         <div class="shape-desc">
           <ul>
-            <li><strong>Background, Lighting, Particles, Shadows</strong> — as in the first demo.</li>
-            <li><strong>Shape 1–5, Hold, Morph, Shape size, Spin, Tilt, Projection steps</strong> — as in the first demo. <em>Hold</em> is how long the row stands still between moves; <em>Morph</em> is how long a move takes.</li>
+            <li><strong>Background, Lighting, Particles, Shadows</strong> — as in the first demo. Here the background and the ground start off, and the environment turns at 10°/s.</li>
+            <li><strong>Shape scale</strong> — size of both shapes as a multiple of the size that fits the row. The stations spread apart as it grows; above about ×2 the shapes at the stations reach past the edge of the view.</li>
+            <li><strong>Shape 1–5, Hold, Morph, Spin, Tilt, Projection steps</strong> — as in the first demo. <em>Hold</em> is how long the row stands still between moves; <em>Morph</em> is how long a move takes.</li>
             <li><strong>Phase offset</strong> — how many shapes apart in the list the two stations are, from 1 to the number of shapes minus one.</li>
             <li><strong>Find max, Record, UI, Canvas size</strong> — as in the first demo. The canvas size picks the layout: side by side for landscape and square, top and bottom for portrait.</li>
           </ul>
