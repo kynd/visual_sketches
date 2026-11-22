@@ -386,8 +386,9 @@ vec3 envBackground(vec3 rd) {
   return envSample(rd, 0.0) * (uBgMode == 1 ? 0.05 : 1.0);
 }
 
-vec3 envShade(vec3 n, vec3 rd, float sh) {
-  vec3 dir = uLookup == 0 ? n : reflect(rd, n);
+// n shades (sun, specular, fresnel); ln picks the environment direction.
+vec3 envShadeL(vec3 n, vec3 ln, vec3 rd, float sh) {
+  vec3 dir = uLookup == 0 ? ln : reflect(rd, ln);
   vec3 E = envSample(dir, uBlur);
   float vis = mix(1.0, sh, uOcclusion);
   float ndl = max(dot(n, uKeyDir), 0.0) * sh;
@@ -397,6 +398,7 @@ vec3 envShade(vec3 n, vec3 rd, float sh) {
   float fr = 0.6 + 0.4 * pow(1.0 - max(dot(n, -rd), 0.0), 5.0);                     // mirror
   return 0.9 * E * vis * fr + 0.3 * spec;
 }
+vec3 envShade(vec3 n, vec3 rd, float sh) { return envShadeL(n, n, rd, sh); }
 
 // Exposure, ACES filmic curve (Narkowicz fit), gamma.
 vec3 envOutput(vec3 c) {

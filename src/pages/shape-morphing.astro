@@ -10,7 +10,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
   <div class="prose">
     <p>
-      The three demos below take shapes from the geom project and morph between them, lit with the environment maps from <a href={`${base}/environment-maps`}>Environment maps</a>. Up to five shapes can be chosen; each holds for a moment, then morphs into the next, and the cycle loops. The first demo builds every shape from particles that travel between surfaces, and the second lines two of them up and moves them through the frame. The third ray-marches the blended shape directly.
+      The three demos below take shapes from the geom project and morph between them, lit with the environment maps from <a href={`${base}/environment-maps`}>Environment maps</a>. Up to five shapes can be chosen; each holds for a moment, then morphs into the next, and the cycle loops. The first demo builds every shape from particles that travel between surfaces, and the second lines them up and moves them through the frame, one stopping at the centre at a time. The third ray-marches the blended shape directly.
     </p>
 
     <div class="subhead">Twenty-three shapes, one interface</div>
@@ -99,32 +99,43 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
     </div>
     <div class="prose">
       <p>
-        The same particles, laid out as a procession. Two shapes stand side by side — top and bottom on a portrait canvas. At every morph the whole row moves one place along: a new shape slides in from the left, the left shape travels to the right while it turns into the next shape in the list, and the right shape slides out. With <em>Swirl</em> gone, every particle moves in a straight line, from its point on one shape at one place to its point on the next shape at the next place.
+        The same particles, laid out as a procession. One shape stands at the centre of the frame, with its neighbours at the sides — above and below on a portrait canvas. At every morph the whole row moves one place along: a new shape slides in from the left, each shape moves one place to the right while it turns into the next shape in the list, and the rightmost one slides out. With <em>Swirl</em> gone, every particle moves in a straight line, from its point on one shape at one place to its point on the next shape at the next place.
       </p>
       <p>
-        Three groups of particles are enough to keep the row going. Every third particle belongs to the same group, and the groups take turns at four places: off-screen before the row, the first station, the second, and off-screen after it. The off-screen places lie far enough out that a shape there is wholly outside the view, so a shape stays whole until it has left the frame, and the group that left the far end jumps back to the start unseen, ready to come in again.
+        Four groups of particles are enough to keep the row going. Every fourth particle belongs to the same group, and the groups take turns at five places: off-screen before the row, the left side, the centre, the right side, and off-screen after it. The off-screen places lie far enough out that a shape there is wholly outside the view, so a shape stays whole until it has left the frame, and the group that left the far end jumps back to the start unseen, ready to come in again.
       </p>
       <p>
-        The two stations show different shapes from the list, a fixed number of steps apart. If station 1 shows shape {"\\( i \\)"}, station 2 shows {"\\( i - k \\)"}, where {"\\( k \\)"} is the <em>Phase offset</em>. For the moving shape to arrive one step further on — shape {"\\( i + 1 \\)"} at station 2 — station 1 has to advance {"\\( k + 1 \\)"} shapes per move:
+        Neighbouring places show different shapes from the list, a fixed number of steps apart. If the centre shows shape {"\\( i \\)"}, the right side shows {"\\( i - k \\)"} and the left side {"\\( i + k \\)"}, where {"\\( k \\)"} is the <em>Phase offset</em>. For each moving shape to arrive one step further on, the centre has to advance {"\\( k + 1 \\)"} shapes per move:
       </p>
-      <div class="math-block">{"\\[ \\text{station 1} = S_{(k+1)c}, \\qquad \\text{station 2} = S_{(k+1)c - k} \\]"}</div>
+      <div class="math-block">{"\\[ \\text{place } m = S_{(k+1)c - km}, \\qquad m = -1, 0, 1 \\]"}</div>
       <p>
-        Here {"\\( c \\)"} counts the moves so far. With the default {"\\( k = 1 \\)"} and five shapes, station 1 steps through the list two at a time, and both stations visit every shape within five moves.
+        Here {"\\( c \\)"} counts the moves so far. With the default {"\\( k = 1 \\)"} and five shapes, the three visible shapes are always different, and the centre visits every shape within five moves.
+      </p>
+      <p>
+        Two effects sit on top. The frame is drawn into an offscreen texture and blurred by an amount that grows with the distance from the centre, so the side shapes go soft while the centre stays sharp. And each sphere's environment lookup is turned by the shape's surface normal at that particle. The spheres keep their own shading, but which part of the environment they show follows the form of the shape, so faces that point different ways pick up different hues.
       </p>
       <div class="page-note">
-        <strong>Layout.</strong> The row runs along the camera's right vector when the canvas is landscape or square and along its down vector when it is portrait, so it stays aligned with the screen while the camera orbits. The off-screen places are 1.5 station spacings from the centre, and a shape there must clear the side of the view frustum: with {"\\( a \\)"} the half-angle of the view along the row and {"\\( X \\)"} the distance at which the frustum's side crosses the shapes' plane, the centre of the shape's bounding ball has to be more than {"\\( R / \\cos a \\)"} past {"\\( X \\)"}. The spacing grows until it is, but never puts the stations closer than 40% of the way from the centre to the edge. The shapes shrink with the view on narrower canvases. A vertical row would pass through the floor, so the floor is hidden on portrait canvases, and the shadow frustum is fitted to the whole row in every direction it can run.
+        <strong>Layout.</strong> The row runs along the camera's right vector when the canvas is landscape or square and along its down vector when it is portrait, so it stays aligned with the screen while the camera orbits. Neighbours are <em>Shape spacing</em> shape diameters apart, and the shapes shrink with the view's long side so the side shapes stay partly in frame on squarer canvases. The off-screen places are two spacings from the centre, and a shape there must clear the side of the view frustum: with {"\\( a \\)"} the half-angle of the view along the row and {"\\( X \\)"} the distance at which the frustum's side crosses the shapes' plane, the centre of the shape's bounding ball has to be more than {"\\( R / \\cos a \\)"} past {"\\( X \\)"}. The spacing grows until it is. A vertical row would pass through the floor, so the floor is hidden on portrait canvases, and the shadow frustum is fitted to the whole row in every direction it can run.
         <br /><br />
-        <strong>Groups.</strong> At the hold of move {"\\( c \\)"}, group {"\\( g \\)"} stands at place {"\\( ((g + c) \\bmod 3) - 1 \\)"}, where −1 is off-screen before, 0 and 1 are the stations, and 2 is off-screen after. A group parked at either off-screen place during the hold skips the projection entirely.
+        <strong>Groups.</strong> At the hold of move {"\\( c \\)"}, group {"\\( g \\)"} stands at place {"\\( ((g + c) \\bmod 4) - 2 \\)"}, where −2 is off-screen before, −1, 0 and 1 are the visible places, and 2 is off-screen after. A group parked off-screen during the hold skips the projection entirely.
+        <br /><br />
+        <strong>Blur.</strong> Distance from the centre is measured with the long edge at 1. Each pixel gathers 48 taps on a golden-angle spiral over a disc whose radius rises from zero at <em>Sharp radius</em> to <em>Edge blur</em> at the long edge, with a smoothstep in between. The offscreen texture is mipmapped, and the taps read the mip level whose texels match the spacing between taps, so wide discs stay smooth. The radius is set in pixels at 1080 lines and scales with the canvas, so 2× recordings blur the same.
+        <br /><br />
+        <strong>Surface normal.</strong> The position pass writes each particle's shape normal — the normalised SDF gradient at its projected point, blended between the two shapes during a morph — to a second render target. The sphere shader takes the direction toward the camera, {"\\( a \\)"}, and the surface normal {"\\( N \\)"}, and rotates the sphere's lookup normal about {"\\( a \\times N \\)"} by the angle between them times <em>Turn toward surface normal</em>. At ×1 the sphere's camera-facing point samples along {"\\( N \\)"}; at ×2 the visible half of the shape's normals covers the whole environment, which spreads the hues around the full wheel. Sun, specular and shadow still use the sphere's own normal.
       </div>
       <details>
         <summary>Controls</summary>
         <div class="shape-desc">
           <ul>
             <li><strong>Background, Lighting, Particles, Shadows</strong> — as in the first demo. Here the background and the ground start off, and the environment turns at 10°/s.</li>
-            <li><strong>Shape scale</strong> — size of both shapes as a multiple of the size that fits the row. The stations spread apart as it grows; above about ×2 the shapes at the stations reach past the edge of the view.</li>
+            <li><strong>Shape scale</strong> — size of the shapes as a multiple of the size that fits the frame.</li>
             <li><strong>Shape 1–5, Hold, Morph, Spin, Tilt, Projection steps</strong> — as in the first demo. <em>Hold</em> is how long the row stands still between moves; <em>Morph</em> is how long a move takes.</li>
-            <li><strong>Phase offset</strong> — how many shapes apart in the list the two stations are, from 1 to the number of shapes minus one.</li>
-            <li><strong>Find max, Record, UI, Canvas size</strong> — as in the first demo. The canvas size picks the layout: side by side for landscape and square, top and bottom for portrait.</li>
+            <li><strong>Phase offset</strong> — how many shapes apart in the list neighbouring places are, from 1 to the number of shapes minus one.</li>
+            <li><strong>Shape spacing</strong> — distance between neighbouring shapes, in shape diameters.</li>
+            <li><strong>Turn toward surface normal</strong> — how far each sphere's environment lookup turns toward the shape's surface normal: 0 for plain spheres, ×1 to look along the normal, more to spread the colours further.</li>
+            <li><strong>Edge blur</strong> — blur radius at the long edge of the frame, in pixels at 1080 lines; Off renders without the blur pass.</li>
+            <li><strong>Sharp radius</strong> — how far from the centre the frame stays sharp, with the long edge at 1.</li>
+            <li><strong>Find max, Record, UI, Canvas size</strong> — as in the first demo. The canvas size picks the layout: a horizontal row for landscape and square, a vertical one for portrait.</li>
           </ul>
         </div>
       </details>

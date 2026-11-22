@@ -155,6 +155,10 @@ layout(location = 0) in vec3 aPos;
 out vec3  vCenterV;
 out vec2  vQ;
 out vec3  vNormalW;
+#ifdef SURFACE_NORMAL
+uniform highp sampler2D uNrmTex;   // per-particle surface normal, same layout as uPosTex
+flat out vec3 vSurfN;
+#endif
 out vec3  vWorld;
 out float vShadow;
 out float vLightDist;
@@ -172,6 +176,9 @@ void main() {
   vec4 pt = texelFetch(uPosTex, ivec2(ti % uPosW, ti / uPosW), 0);
   vec3 c = pt.xyz;
   float rad = pt.w;
+  #ifdef SURFACE_NORMAL
+  vSurfN = texelFetch(uNrmTex, ivec2(ti % uPosW, ti / uPosW), 0).xyz;
+  #endif
   if (rad <= 0.0) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); gl_PointSize = 0.0; return; }  // clipped away
 #else
   vec3 c = particlePos(id);
@@ -224,6 +231,16 @@ const FS = /* glsl */`
 in vec3  vCenterV;
 in vec2  vQ;
 in vec3  vNormalW;
+#ifdef SURFACE_NORMAL
+flat in vec3 vSurfN;
+uniform float uSurfNormal;   // turn multiplier: 0 = plain sphere lookup, 1 = the camera-facing point
+                             // looks along the surface normal, 2 = twice that angle (whole environment)
+// Rotate x about unit axis k by angle t (Rodrigues).
+vec3 rotateAxis(vec3 x, vec3 k, float t) {
+  float c = cos(t), s = sin(t);
+  return x * c + cross(k, x) * s + k * dot(k, x) * (1.0 - c);
+}
+#endif
 in vec3  vWorld;
 in float vShadow;
 in float vLightDist;
@@ -286,7 +303,21 @@ void main() {
   sh = shadowMapLookup(wp + n * vRad * 0.15);
   #endif
   #ifdef ENV_LIGHTING
+    #ifdef SURFACE_NORMAL
+  // Turn the sphere's lookup so its camera-facing point samples along the
+  // surface normal: the sphere keeps its shading, the shape's form sets which
+  // part of the environment it shows.
+  vec3 ln = n;
+  if (dot(vSurfN, vSurfN) > 0.25 && uSurfNormal > 0.0) {
+    vec3 a = -rd, N = normalize(vSurfN);
+    vec3 k = cross(a, N);
+    float sk = length(k);
+    if (sk > 1e-4) ln = rotateAxis(n, k / sk, uSurfNormal * atan(sk, dot(a, N)));
+  }
+  fragColor = vec4(envOutput(envShadeL(n, ln, rd, sh)), 1.0);
+    #else
   fragColor = vec4(envOutput(envShade(n, rd, sh)), 1.0);   // env-glsl.js, injected as 'extra'
+    #endif
   #else
   vec3 col = stdLighting(n, rd, sh);
   fragColor = vec4(pow(max(col, 0.0), vec3(0.4545)), 1.0);

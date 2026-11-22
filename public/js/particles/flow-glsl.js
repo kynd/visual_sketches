@@ -315,50 +315,64 @@ vec4 particle(uint id) {
 `;
 
 // ── Morph conveyor ───────────────────────────────────────────────────────
-// Three particle groups take turns at four places along a line: off-screen
-// before, station 1, station 2, off-screen after. Every morph moves each group
-// one place along while it morphs one step through the shape list, so particles
-// travel in straight lines (no swirl). The off-screen places lie far enough out
-// that a shape there is wholly outside the view (main.js sets the spacing), so a
-// group leaving the far end slips back to the start unseen.
+// Four particle groups take turns at five places along a line: off-screen
+// before (−2), the side station before the centre (−1), the centre (0), the
+// side station after it (1) and off-screen after (2). Every morph moves each
+// group one place along while it morphs one step through the shape list, so
+// particles travel in straight lines (no swirl). The off-screen places lie far
+// enough out that a shape there is wholly outside the view (main.js sets the
+// spacing), so the group leaving the far end slips back to the start unseen.
 const CONVEYOR = MORPH_COMMON + /* glsl */`
-uniform ivec3 uGroupA;    // per group: shape it is morphing from
-uniform ivec3 uGroupB;    //            shape it is morphing to
-uniform vec3  uGroupPos;  //            place along the line: −1 before, 0 and 1 the stations, 2 after
+uniform ivec4 uGroupA;    // per group: shape it is morphing from
+uniform ivec4 uGroupB;    //            shape it is morphing to
+uniform vec4  uGroupPos;  //            place along the line: −2 … 2, 0 = centre
 uniform vec3  uAxis;      // world direction of the line (screen right, or screen down)
 uniform float uSpacing;   // world distance between neighbouring places
 
 vec4 particle(uint id) {
-  int g = int(id % 3u);
+  int g = int(id % 4u);
   float x = uGroupPos[g];
-  if (x <= -1.0 || x >= 2.0) return vec4(0.0);   // parked off-screen during the hold
-  uint s = (id / 3u) * 1664525u + 1013904223u;
+  if (x <= -2.0 || x >= 2.0) return vec4(0.0);   // parked off-screen during the hold
+  uint s = (id / 4u) * 1664525u + 1013904223u;
   vec3 seed = randomDir(s) * 1.1 * pow(rnd(s), 1.0 / 3.0);
   float sz = uSize * (0.7 + 0.3 * rnd(s));
   int A = uGroupA[g], B = uGroupB[g];
   vec3 q = project(A, seed);
-  if (uMix > 0.0 && B != A) q = mix(q, project(B, seed), uMix);
-  vec3 p = shapeToWorld(q, uSpin, uTilt, uScale) + uAxis * (x - 0.5) * uSpacing;
+  vec3 n = normalize(shapeGrad(A, q));
+  if (uMix > 0.0 && B != A) {
+    vec3 qB = project(B, seed);
+    vec3 m = mix(n, normalize(shapeGrad(B, qB)), uMix);
+    n = length(m) > 1e-3 ? normalize(m) : n;
+    q = mix(q, qB, uMix);
+  }
+  gNormal = shapeToWorld(n, uSpin, uTilt, 1.0);   // world surface normal (rotation only)
+  vec3 p = shapeToWorld(q, uSpin, uTilt, uScale) + uAxis * x * uSpacing;
   return vec4(p, sz);
 }
 `;
 
 const MODES = { plume: PLUME, stream: STREAM, surface: SURFACE, lattice: LATTICE, morph: MORPH, conveyor: CONVEYOR };
 
-export function flowShaders(mode) {
+// normals: also write gNormal (set by the mode's particle()) to a second target.
+export function flowShaders(mode, { normals = false } = {}) {
   const vs = HEADER + /* glsl */`
 void main() {
   vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1)) * 2.0 - 1.0;
   gl_Position = vec4(c, 0.0, 1.0);
 }`;
-  const fs = HEADER + NOISE + COMMON + MODES[mode] + /* glsl */`
-out vec4 o;
-void main() {
+  const fs = HEADER + NOISE + COMMON + 'vec3 gNormal = vec3(0.0);\n' + MODES[mode] + /* glsl */`
+layout(location = 0) out vec4 o;
+${normals ? 'layout(location = 1) out vec4 oN;' : ''}
+vec4 run() {
   ivec2 px = ivec2(gl_FragCoord.xy);
   int id = px.y * uPosW + px.x;
-  if (id == uCount) { o = vec4(0.0, 0.0, 0.0, uCoreR); return; }  // optional solid core sphere
-  if (id > uCount) { o = vec4(0.0); return; }
-  o = particle(uint(id));
+  if (id == uCount) return vec4(0.0, 0.0, 0.0, uCoreR);  // optional solid core sphere
+  if (id > uCount) return vec4(0.0);
+  return particle(uint(id));
+}
+void main() {
+  o = run();
+  ${normals ? 'oN = vec4(gNormal, 0.0);' : ''}
 }`;
   return { vs, fs };
 }

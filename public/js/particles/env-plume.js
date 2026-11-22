@@ -14,6 +14,7 @@ import { flowShaders } from './flow-glsl.js';
 import { ENV_SHADING, backgroundShaders, envGroundShaders, envInsetShaders } from './env-glsl.js';
 import { CAM_YAW, Environment, envSpecs, bgSpec } from './env-common.js';
 import { POS_W, positionTargets, shadowTargets, methodSpec, countSpec, radiusSpec, speedSpec, range } from './flow-demo.js';
+import { ScreenBlur } from './screen-blur.js';
 import { mountShell } from '../demo-shell.js';
 
 // World-space points the light frustum must cover: the floor and the particles' volume.
@@ -32,6 +33,10 @@ for (const x of [-1.6, 1.6]) for (const z of [-1.6, 1.6]) BOUNDS.push([x, 2.6, z
 //                       or bounds(p, { aspect }) returning them
 //   ground(p, ctx)    → false to hide the floor (ctx: { aspect, camRot })
 //   uniforms and info also receive ctx as their third argument
+//   normals           — the mode writes per-particle surface normals; p.surfNormal (×, 1 = exactly)
+//                       turns each sphere's environment lookup toward them
+//   blur(p)           → { radius, focus } for a screen blur that grows away from the centre
+//                       (radius in pixels at 1080 lines, at the long edge; focus = sharp zone, long edge = 1)
 // }
 // closed: panel groups that start collapsed ('Lighting', 'Particles', 'Shadows', or kernel.group).
 // defaults also take bg and ground (both default true) for the Background and Ground toggles.
@@ -45,21 +50,24 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
   let shell;
   const camera = new OrbitCamera(canvas, { yaw: CAM_YAW, pitch: 0.1, dist: 4.8, onChange: () => shell.loop.redraw() });
 
-  const posTarget = positionTargets(gl);
+  const posTarget = positionTargets(gl, { normals: !!kernel.normals });
   const shadowTarget = shadowTargets(gl);
-  let flowProg = null, bgProg = null, groundProg = null, insetProg = null, environment = null;
+  let flowProg = null, bgProg = null, groundProg = null, insetProg = null, environment = null, screenBlur = null;
   const particleProgs = new Map();
   if (floatOK) {
-    let s = flowShaders(kernel.mode);  flowProg = new Program(gl, s.vs, s.fs);
+    let s = flowShaders(kernel.mode, { normals: !!kernel.normals });  flowProg = new Program(gl, s.vs, s.fs);
     const head = shaderHead([], ENV_SHADING);
     s = backgroundShaders(head);       bgProg = new Program(gl, s.vs, s.fs);
     s = envGroundShaders(head);        groundProg = new Program(gl, s.vs, s.fs);
     s = envInsetShaders(head);         insetProg = new Program(gl, s.vs, s.fs);
     environment = new Environment(gl, () => scene.drawQuad());
+    if (kernel.blur) screenBlur = new ScreenBlur(gl, () => scene.drawQuad());
   }
   function particleProg(method) {
     if (!particleProgs.has(method)) {
-      const s = particleShaders([scene.methodDefine(method), 'PASS_CAMERA', 'SHADOW_MAP_PIXEL', 'POS_TEXTURE', 'ENV_LIGHTING'], ENV_SHADING);
+      const defs = [scene.methodDefine(method), 'PASS_CAMERA', 'SHADOW_MAP_PIXEL', 'POS_TEXTURE', 'ENV_LIGHTING'];
+      if (kernel.normals) defs.push('SURFACE_NORMAL');
+      const s = particleShaders(defs, ENV_SHADING);
       particleProgs.set(method, new Program(gl, s.vs, s.fs));
     }
     return particleProgs.get(method);
@@ -121,9 +129,14 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
     scene.program(['METHOD_POINTS', 'PASS_SHADOW_DEPTH', 'POS_TEXTURE']).use().setAll(U);
     scene.draw('points', n);
 
-    // Pass 3 — camera: background, ground, spheres.
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, canvas.width, canvas.height);
+    // Pass 3 — camera: background, ground, spheres (into the blur target when blurring).
+    const blur = screenBlur ? kernel.blur(p) : null;
+    const blurring = blur && blur.radius > 0;
+    if (blurring) screenBlur.begin(canvas.width, canvas.height);
+    else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    }
     gl.clearColor(0, 0, 0, p.bg ? 1 : 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.activeTexture(gl.TEXTURE0);
@@ -138,8 +151,15 @@ export function mountEnvParticles({ title, recordName, envs, defaults, kernel, c
       groundProg.use().setAll(U);
       scene.drawQuad();
     }
+    if (kernel.normals) {
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, pt.nrm);
+      U.uNrmTex = 4;
+      U.uSurfNormal = p.surfNormal ?? 1;
+    }
     particleProg(p.method).use().setAll(U);
     scene.draw(p.method, n);
+    if (blurring) screenBlur.end(blur.radius * canvas.height / 1080, blur.focus);   // pass 4
 
     if (p.inset) {
       const h = Math.round(canvas.height * 0.2), m = Math.round(canvas.height * 0.03);

@@ -55,12 +55,13 @@ export function morphState(p, t) {
   return { a, b, mix, label };
 }
 
-// Morph conveyor: three particle groups move along four places — before (−1),
-// station 1 (0), station 2 (1), after (2). At the hold of cycle c, group g sits
-// at place m = ((g + c) mod 3) − 1; during the morph it moves to m + 1 while
-// morphing one step through the list. Station 1 shows shape d·c and station 2
-// shape d·c − k (k = Phase offset, d = k + 1), so the two always differ and a
-// group arriving at station 2 is exactly one step past where it left station 1.
+// Morph conveyor: four particle groups move along five places — off-screen
+// before (−2), side (−1), centre (0), side (1), off-screen after (2). At the
+// hold of cycle c, group g sits at place m = ((g + c) mod 4) − 2; during the
+// morph it moves to m + 1 while morphing one step through the list. The group
+// at place m shows shape d·c − k·m (k = Phase offset, d = k + 1): neighbouring
+// places are k shapes apart, and a group arriving at the next place is exactly
+// one step past where it left.
 export function conveyorState(p, t) {
   const ids = slotIds(p);
   const n = ids.length;
@@ -70,12 +71,12 @@ export function conveyorState(p, t) {
   const s = u < p.hold ? 0 : ease(Math.min(1, (u - p.hold) / p.morph));
   const at = i => ids[((i % n) + n) % n];
   const A = [], B = [], pos = [];
-  for (let g = 0; g < 3; g++) {
-    const m = ((g + c) % 3 + 3) % 3 - 1;
+  for (let g = 0; g < 4; g++) {
+    const m = ((g + c) % 4 + 4) % 4 - 2;
     const i = d * c - k * m;
     A.push(at(i)); B.push(at(i + 1)); pos.push(m + s);
   }
-  const s1 = at(d * c), s2 = at(d * c - k);
-  const label = s === 0 ? `${LABEL[s1]} | ${LABEL[s2]}` : `${LABEL[s1]} | ${LABEL[s2]} → moving ${Math.round(s * 100)}%`;
+  const row = `${LABEL[at(d * c + k)]} | ${LABEL[at(d * c)]} | ${LABEL[at(d * c - k)]}`;
+  const label = s === 0 ? row : `${row} → moving ${Math.round(s * 100)}%`;
   return { A, B, pos, mix: s, label };
 }

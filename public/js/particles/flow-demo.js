@@ -38,22 +38,31 @@ export const shadowSpecs = () => [
 
 // Position texture: one RGBA32F texel per particle (+1 for an optional core).
 // Returns get(n) → { tex, fbo, h }, reallocating only when the height changes.
-export function positionTargets(gl) {
+export function positionTargets(gl, { normals = false } = {}) {
   let pos = null;
   return n => {
     const h = Math.max(1, Math.ceil((n + 1) / POS_W));
     if (pos && pos.h === h) return pos;
-    if (pos) { gl.deleteTexture(pos.tex); gl.deleteFramebuffer(pos.fbo); }
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, POS_W, h);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    if (pos) { gl.deleteTexture(pos.tex); if (pos.nrm) gl.deleteTexture(pos.nrm); gl.deleteFramebuffer(pos.fbo); }
+    const target = format => {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, format, POS_W, h);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      return tex;
+    };
+    const tex = target(gl.RGBA32F);
+    const nrm = normals ? target(gl.RGBA16F) : null;   // optional second output: per-particle surface normal
     const fbo = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    if (nrm) {
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, nrm, 0);
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    pos = { tex, fbo, h };
+    pos = { tex, nrm, fbo, h };
     return pos;
   };
 }
