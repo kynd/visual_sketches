@@ -321,13 +321,14 @@ vec4 particle(uint id) {
 // group one place along while it morphs one step through the shape list, so
 // particles travel in straight lines (no swirl). The off-screen places lie far
 // enough out that a shape there is wholly outside the view (main.js sets the
-// spacing), so the group leaving the far end slips back to the start unseen.
+// distances), so the group leaving the far end slips back to the start unseen.
 const CONVEYOR = MORPH_COMMON + /* glsl */`
 uniform ivec4 uGroupA;    // per group: shape it is morphing from
 uniform ivec4 uGroupB;    //            shape it is morphing to
 uniform vec4  uGroupPos;  //            place along the line: −2 … 2, 0 = centre
 uniform vec3  uAxis;      // world direction of the line (screen right, or screen down)
-uniform float uSpacing;   // world distance between neighbouring places
+uniform float uSpacing;   // world distance between neighbouring visible places
+uniform float uOuter;     // world distance from a side place to the off-screen place beyond it
 
 vec4 particle(uint id) {
   int g = int(id % 4u);
@@ -346,7 +347,8 @@ vec4 particle(uint id) {
     q = mix(q, qB, uMix);
   }
   gNormal = shapeToWorld(n, uSpin, uTilt, 1.0);   // world surface normal (rotation only)
-  vec3 p = shapeToWorld(q, uSpin, uTilt, uScale) + uAxis * x * uSpacing;
+  float along = abs(x) <= 1.0 ? x * uSpacing : sign(x) * (uSpacing + (abs(x) - 1.0) * uOuter);
+  vec3 p = shapeToWorld(q, uSpin, uTilt, uScale) + uAxis * along;
   return vec4(p, sz);
 }
 `;

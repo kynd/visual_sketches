@@ -14,27 +14,28 @@ const CAM_DIST = 4.8;     // default camera distance
 const HALF_SHORT = CAM_DIST * Math.tan(20 * Math.PI / 180);   // half the view's shorter side at that distance
 const HALF_LONG_16_9 = HALF_SHORT * 16 / 9;
 const SHAPE_R = 1.1;      // shape-space radius every particle stays within (the seed ball)
-const SHAPE_D = 1.8;      // typical shape diameter in shape space, for the spacing
 
 // Shape scale and spacing for the canvas shape. Shapes shrink with the view's
 // long side so the side shapes stay in frame on squarer canvases. Neighbours
-// are 'Shape spacing' diameters apart, but never so close that a shape at the
-// off-screen places (2 spacings out) could reach into the view: the distance
-// from its bounding ball's centre to the side plane of the view frustum,
-// cos a · (X − halfLong), must exceed its radius.
+// are 'Shape spacing' × the centre-to-edge distance apart, whatever the scale.
+// The off-screen places sit one spacing further out, or further still when a
+// shape there could reach into the view: the distance from its bounding ball's
+// centre to the side plane of the view frustum, cos a · (X − halfLong), must
+// exceed its radius.
 function layout(p, aspect) {
   const halfLong = HALF_SHORT * Math.max(aspect, 1 / aspect);
   const scale = BASE_SIZE * p.scale * Math.min(1, halfLong / HALF_LONG_16_9);
   const cosA = 1 / Math.hypot(1, halfLong / CAM_DIST);
-  const spacing = Math.max(p.gap * SHAPE_D * scale, (halfLong + 1.05 * SHAPE_R * scale / cosA) / 2);
-  return { spacing, scale };
+  const spacing = p.gap * halfLong;
+  const outer = Math.max(spacing, halfLong + 1.05 * SHAPE_R * scale / cosA - spacing);
+  return { spacing, outer, scale };
 }
 
 // The light frustum covers the floor and the whole row, which can run along
 // any horizontal direction (camera right) or vertically (portrait).
 function bounds(p, { aspect }) {
-  const { spacing, scale } = layout(p, aspect);
-  const e = 2 * spacing + SHAPE_R * scale;
+  const { spacing, outer, scale } = layout(p, aspect);
+  const e = spacing + outer + SHAPE_R * scale;
   const pts = [];
   for (const x of [-e, e]) for (const y of [-e, e]) for (const z of [-e, e]) pts.push([x, y, z]);
   for (const x of [-4, 4]) for (const z of [-4, 4]) pts.push([x, -1.25, z]);
@@ -56,7 +57,7 @@ mountEnvParticles({
       // gyroid, torus, dodecahedron, harmonic sphere, death star; Shape scale above replaces the shared Shape size
       ...shapeSpecs({ slots: [16, 3, 14, 20, 8] }).filter(s => s.id !== 'scale'),
       { id: 'phase', label: 'Phase offset', type: 'range', min: 1, max: 4, step: 1, value: 1, format: v => String(v) },
-      range('gap', 'Shape spacing', 1, 2.5, 0.01, 1.3),
+      range('gap', 'Shape spacing', 0.3, 1.5, 0.01, 0.9),
       { id: 'surfNormal', label: 'Turn toward surface normal', type: 'range', min: 0, max: 3, step: 0.05, value: 2, format: v => `×${v.toFixed(2)}` },
       { id: 'project', label: 'Projection steps', type: 'range', min: 1, max: 12, step: 1, value: 6, format: v => String(v) },
       { type: 'group', label: 'Blur', open: true },
@@ -73,7 +74,7 @@ mountEnvParticles({
       const m = conveyorState(p, time);
       return {
         uGroupA: new Int32Array(m.A), uGroupB: new Int32Array(m.B), uGroupPos: new Float32Array(m.pos),
-        uMix: m.mix, uAxis: new Float32Array(axis), uSpacing: L.spacing,
+        uMix: m.mix, uAxis: new Float32Array(axis), uSpacing: L.spacing, uOuter: L.outer,
         uScale: L.scale, uSpin: time * p.spin * Math.PI / 180, uTilt: p.tilt * Math.PI / 180,
         uProject: p.project, uFreq: 1.2, uEvolve: 0.4,
       };
