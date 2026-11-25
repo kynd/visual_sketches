@@ -1,0 +1,186 @@
+---
+import PageLayout from '../layouts/PageLayout.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<PageLayout title="Watercolour fluid" slug="watercolour-fluid">
+  <div class="monologue">
+    Watercolour is a fluid that stops wherever the paper is dry. Give a fluid solver that one rule, and let a few invisible hands hold the brush.
+  </div>
+
+  <div class="prose">
+    <p>
+      The first demo below ports the watercolour solver from the math_sketches sketchbook (Fluid IV), where strokes came from the pointer. Here nobody draws: automatic pens do. Each driver moves its pens in its own way and lifts them between strokes, and the brushes from the original turn every pen sample into water, pigment and a push on the fluid.
+    </p>
+    <p>
+      The second demo keeps the solver and the pens but drops the watercolour. Without paper and water, the colour is no longer pigment sitting on a sheet. It is the liquid itself, filling the whole frame and moving wherever the flow goes.
+    </p>
+  </div>
+
+  <section class="demo-section" id="drivers">
+    <div class="demo-header">
+      <h2>Watercolour drivers</h2>
+      <a href={`${base}/demos/watercolour-drivers/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/watercolour-drivers/index.html?embedded`} title="Watercolour drivers" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <div class="subhead">A fluid, a sheet of paper and some water</div>
+      <p>
+        Underneath the paint runs a real fluid solver. A velocity field {"\\( \\mathbf{u} \\)"} lives on a grid and follows the incompressible Navier–Stokes equations: momentum is carried along by the flow, pushed by pressure, smoothed by viscosity and driven by the pens' force {"\\( \\mathbf{f} \\)"}, while the flow may never pile up or thin out anywhere:
+      </p>
+      <div class="math-block">{"\\[ \\partial_t \\mathbf{u} + (\\mathbf{u}\\cdot\\nabla)\\mathbf{u} = -\\nabla p + \\nu \\nabla^2 \\mathbf{u} + \\mathbf{f}, \\qquad \\nabla\\cdot\\mathbf{u} = 0 \\]"}</div>
+      <p>
+        Each step applies these terms one after another, after Jos Stam's <em>Stable Fluids</em>: vorticity confinement restores small eddies, an implicit solve adds viscosity, the field carries itself along by tracing each cell backwards, and a pressure solve removes whatever divergence is left. Every pass is a full-screen draw into a floating-point texture.
+      </p>
+      <p>
+        Three more fields make it watercolour. The <strong>water</strong> field records how wet the paper is; pens add to it and it dries away exponentially. The <strong>pigment</strong> is carried by the flow, but only as fast as the paper under it is wet, so colour bleeds freely inside a wet stroke and stops dead at its dry edge. The <strong>paper</strong> keeps a permanent stain: wherever wet pigment has been, it takes on that colour and keeps it after the water is gone.
+      </p>
+      <div class="page-note">
+        <strong>Step.</strong> In order: curl and vorticity confinement; 16 Jacobi sweeps of {"\\( (I - \\nu\\,\\Delta t\\,\\nabla^2)\\,\\mathbf{u} = \\mathbf{u}_{\\text{old}} \\)"}; semi-Lagrangian self-advection with a dissipation of 0.22/s; divergence, 32 Jacobi sweeps of {"\\( \\nabla^2 p = \\nabla\\cdot\\mathbf{u} \\)"} warm-started from 0.8 times the last pressure, and {"\\( \\mathbf{u} \\leftarrow \\mathbf{u} - \\nabla p \\)"}; drying {"\\( w \\leftarrow w\\,e^{-k\\,\\Delta t} \\)"}; the paper stain; and finally the pigment advection. Walls are free-slip. The time step is fixed at 1/60 s.
+        <br /><br />
+        <strong>Water gate.</strong> Pigment is traced backwards along {"\\( \\mathbf{u} \\cdot \\text{smoothstep}(0.02, 0.18, w) \\)"}. Pigment keeps a coverage value in its alpha channel, and a traced sample is blended in by its own coverage, so a strong flow can't drag unpainted texels into a painted area.
+        <br /><br />
+        <strong>Paper and display.</strong> With pigment {"\\( (D, \\alpha_D) \\)"}, water {"\\( w \\)"} and paper {"\\( (P, \\alpha_P) \\)"}, each step sets {"\\( P \\leftarrow \\text{mix}(P, D, w\\,\\alpha_D) \\)"} and {"\\( \\alpha_P \\leftarrow \\max(\\alpha_P, w\\,\\alpha_D) \\)"}. The frame shows the stained paper over the base colour, with the wet pigment over that at opacity {"\\( \\min(1, 1.8\\,w)\\,\\alpha_D \\)"}. Weighting by {"\\( \\alpha_D \\)"} is a change from the original, where water with no pigment in it darkened the paper.
+        <br /><br />
+        <strong>Grids.</strong> The original simulated a square and cropped it to the canvas. Here the grids take the canvas's shape: <em>Grid cells</em> along the short side (910 × 512 at 16:9 with 512), with pigment, water and paper at twice that resolution. Velocity is stored in grid cells per second, so the pens' push and the viscosity are rescaled with the grid to keep the motion the same.
+      </div>
+
+      <div class="subhead">Pens without a hand</div>
+      <p>
+        A driver is a function of time. For each pen it answers two questions: is the pen down, and if so, where is it? Time is cut into periods, and in each one the pen goes down after a short random delay and stays down for a random part of the period. Every random choice comes from hashing the palette seed, the pen and the period number, so a pen's whole life is fixed in advance.
+      </p>
+      <p>
+        Between two steps, the pen's movement becomes a stroke segment: splats of water, pigment and momentum along the path, pushing the fluid in the direction the pen travels, as a pointer drag did in the original. The six drivers differ only in their paths. <em>Wander</em> drifts across the frame on smooth noise. <em>Scribble</em> runs tight loops around a slowly drifting centre. <em>Loops</em> are the original's automatic gusts: circles that ramp in and out. <em>Lines</em> are quick, slightly bent strokes along random chords. <em>Taps</em> are single bursts at random spots. <em>Handwriting</em> writes rows of looped strokes from left to right and top to bottom, with gaps between words. <em>Mixed</em> hands each pen a randomly chosen driver from the other six and draws again every few seconds, so different pens move in different ways at once.
+      </p>
+      <div class="page-note">
+        <strong>Units.</strong> Positions are in a frame whose short side is 1. A pen moving at {"\\( v \\)"} units per second pushes the fluid at {"\\( 100\\,v \\)"} cells per second on a 512-cell grid, times <em>Push strength</em> — the rate a pointer drag had in the original. A segment longer than {"\\( 0.012\\sqrt{\\text{Brush size}} \\)"}, about 0.4 of the pigment splat's radius, is split into up to six splats, each carrying its share of the momentum.
+        <br /><br />
+        <strong>Noise.</strong> Wander and Scribble use value noise with quintic interpolation, so the path and its velocity are smooth, summed over two octaves and squashed by {"\\( s(v) = v / \\sqrt{1 + v^2} \\)"} to stay inside a 0.07 margin.
+        <br /><br />
+        <strong>Drivers.</strong> Wander: noise at 0.6 Hz, periods of 2.6 s, down for 50–85 % of each. Scribble: circles of radius 0.05 ± 0.035 at 1.3–2.2 turns per second around a centre on 0.15 Hz noise; periods of 3.5 s, down 75–95 %. Loops: radius 0.09–0.18, 2.2–4.4 rad/s in either direction with a slow wobble; periods of 1.5 s; strength ramps up over the first quarter of the stroke and down over the last. Lines: chords 0.45–0.9 long, bent by up to 15 % of their length; periods of 1.2 s, down 30–55 %. Taps: one burst per 0.55 s period. Mixed: every 6 s of driver time, on its own phase, each pen draws one of the other six drivers by hash and stays up for the first 0.25 s, so one stroke never joins two drivers' paths. Handwriting: a trochoid {"\\( x = x_0 + 0.2\\,q + r\\cos(\\omega q + \\varphi) \\)"}, {"\\( y = y_{\\text{row}} + 1.5\\,r\\sin(\\omega q + \\varphi) \\)"} with {"\\( r \\approx 0.05 \\)"} and 1.5 loops per second; rows 0.2 apart, words 0.9 s long with random gaps, and each pen starting on its own row.
+        <br /><br />
+        <strong>Brushes.</strong> Drag lays one stroke segment. Parallel lays five, 0.09 × <em>Brush size</em> apart across the direction of travel. Splash flings four drops per step from 0.03–0.19 × <em>Brush size</em> around the pen at 900–3100 cells per second, plus 15 % of the pen's own push. Explode fires 16 rays outward at 2600–4800 cells per second every seven steps. Taps use Explode, or a ring of small drops when the brush is Splash.
+      </div>
+
+      <div class="subhead">Replaying a simulation</div>
+      <p>
+        Everything else on this site draws each frame as a pure function of time, and the recorder relies on that to render frames at exact times. A fluid can't jump to a time: it has to step there. So the demo keeps the simulation at a step count, and drawing at time {"\\( t \\)"} first advances it to step {"\\( \\lfloor 60 t \\rfloor \\)"}. Since the pens and brushes are themselves fixed functions of the step, the result depends only on {"\\( t \\)"} and the settings, and a recording replays the same strokes whatever its frame rate.
+      </p>
+      <div class="page-note">
+        <strong>Fresh sheets.</strong> Going back in time, or changing <em>Palette</em>, <em>Grid cells</em> or the shape of the canvas, starts a new sheet. A new sheet is painted for 3 s before its first frame is shown, so it never opens blank. During playback the simulation advances at most four steps per frame; if a frame takes longer than that, the pens skip ahead rather than slowing the clock. Settings changed mid-run take effect from the next step, so a sheet painted with changes along the way can't be reproduced exactly.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Driver</strong> — how the pens move: Wander, Scribble, Loops, Lines, Taps, Handwriting, or Mixed (a random driver per pen, changing every 6 s).</li>
+            <li><strong>Pens</strong> — number of pens painting at once, each on its own path.</li>
+            <li><strong>Pen speed</strong> — how fast the pens move and how often they lift, as a multiple of the driver's own pace.</li>
+            <li><strong>Brush</strong> — what a pen lays down: Drag (one stroke), Parallel (five side by side), Splash (drops flung off the pen) or Explode (radial bursts).</li>
+            <li><strong>Brush size</strong> — scale of the splats' radius, relative to the original brush.</li>
+            <li><strong>Colours</strong> — a new palette colour for every stroke, one colour per pen, or one colour for all pens.</li>
+            <li><strong>Palette</strong> — seed for the five palette hues, the paper colour and every random choice of the pens; changing it starts a new sheet.</li>
+            <li><strong>Push strength</strong> — how hard the pens push the fluid; at 0 they paint without stirring it.</li>
+            <li><strong>Viscosity</strong> — how quickly the flow smooths out, in grid cells² per second on a 512-cell grid.</li>
+            <li><strong>Vorticity</strong> — strength of the vorticity confinement force, which restores small eddies; 0 keeps strokes solid, higher values swirl them.</li>
+            <li><strong>Drying rate</strong> — how fast the water evaporates, per second; pigment stops moving as the paper dries.</li>
+            <li><strong>Grid cells</strong> — resolution of the velocity grid: 256, 384 or 512 cells along the short side; pigment uses twice this. Changing it starts a new sheet.</li>
+            <li><strong>View</strong> — Paint; Lit paint (the paint shaded as if the pressure field were a relief under it); Speed (hue for direction, lightness for speed); Vorticity; Pressure; Water; or Sky reflection (the pressure relief reflecting an OKLCH sky, as in the original).</li>
+            <li><strong>Relief height</strong> — height of the pressure relief in the two lit views.</li>
+            <li><strong>Sky L, down / up</strong> — OKLCH lightness of the sky straight down and straight up, for the sky reflection view.</li>
+            <li><strong>Record</strong> — captures video (see <a href={`${base}/particle-rendering#recording`}>Recording</a>).</li>
+            <li><strong>UI</strong> — shows or hides everything except Record and play/pause (also the H key).</li>
+            <li><strong>Canvas size</strong> (top bar) — rendering resolution: 1920×1080, 1080×1920, 1600×1200, 1200×1600 or 1080×1080, scaled to fit the view. The simulation grids take the same shape.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="demo-section" id="colour-flow">
+    <div class="demo-header">
+      <h2>Colour flow</h2>
+      <a href={`${base}/demos/colour-flow/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/colour-flow/index.html?embedded`} title="Colour flow" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        Here the colour field covers every pixel from the start. A sheet begins as a pattern of palette colours — stripes, rings, cells or marbled bands — and the pens drag through it, folding the bands into thinner and thinner filaments, the way a comb pulls ink across the water in paper marbling. With nothing left to gate it, the colour moves wherever the fluid does, and the pens can also add colour of their own.
+      </p>
+      <p>
+        A liquid made entirely of colour shows a weakness the watercolour hides. Semi-Lagrangian advection resamples the field every step, and its bilinear interpolation averages neighbouring texels. One step blurs very little, but after a few thousand steps every edge has softened and the frame drifts toward its average colour, a muddy grey. MacCormack advection fixes most of this. It moves the field forward, moves the result back again, and compares the round trip with where it started. The difference is the error the interpolation introduced, and the step corrects for half of it:
+      </p>
+      <div class="math-block">{"\\[ \\hat\\phi = A(\\phi), \\qquad \\tilde\\phi = A^{-1}(\\hat\\phi), \\qquad \\phi' = \\hat\\phi + \\tfrac{1}{2}(\\phi - \\tilde\\phi) \\]"}</div>
+      <p>
+        Here {"\\( A \\)"} is one semi-Lagrangian step and {"\\( A^{-1} \\)"} the same step with time reversed. The correction can overshoot at sharp edges, so {"\\( \\phi' \\)"} is clamped between the smallest and largest of the four texels the backward trace lands between, which keeps the scheme stable. Colours still mix once filaments become thinner than a texel, so by default the pens add a little new colour with every stroke.
+      </p>
+      <div class="page-note">
+        <strong>Start patterns.</strong> Positions are in a frame whose short side is 1, and {"\\( w \\)"} is <em>Band width</em>. Stripes are bands {"\\( w \\)"} wide across a seeded direction. Rings are bands of radius around a seeded centre. Cells are a jittered Voronoi diagram with cells about {"\\( 2.5\\,w \\)"} across. Marbled bands are stripes whose coordinate is displaced by three sines of different frequencies. Every region takes one of the 20 palette colours, in a seeded order, at its own lightness: unlike watercolour pigment, the colours are not rescaled to one brightness.
+        <br /><br />
+        <strong>Differences from the first demo.</strong> No water, paper or drying, and no gate on the colour's advection. The colour has no dissipation, and its alpha is 1 everywhere. A pen's colour is mixed in with weight {"\\( g \\cdot \\text{Ink amount} \\)"}, where {"\\( g \\)"} is the splat's Gaussian; with <em>Pen colour</em> set to None the pens only push. Vorticity defaults to 6 and viscosity to 0.02, for a livelier flow. MacCormack costs two extra full-resolution passes per step. <em>Start pattern</em> and <em>Band width</em> start a new sheet, as <em>Palette</em> and <em>Grid cells</em> do.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Driver, Pens, Pen speed, Brush, Brush size</strong> — as in the first demo. Here the brush starts at full size.</li>
+            <li><strong>Pen colour</strong> — None (the pens only stir), a new palette colour for every stroke, one colour per pen, or one colour for all pens.</li>
+            <li><strong>Ink amount</strong> — how strongly a pen's colour replaces the liquid under it, at the centre of a splat.</li>
+            <li><strong>Palette</strong> — seed for the palette, the pattern's colour order, direction and centre, and every random choice of the pens; changing it starts a new sheet.</li>
+            <li><strong>Start pattern</strong> — the colour layout a new sheet starts from: Stripes, Rings, Cells or Marbled bands.</li>
+            <li><strong>Band width</strong> — width of the pattern's bands, with the short side of the frame at 1.</li>
+            <li><strong>Push strength, Viscosity, Vorticity, Grid cells</strong> — as in the first demo.</li>
+            <li><strong>Advection</strong> — how the colour is carried: MacCormack (sharp) or plain semi-Lagrangian (blurs and greys over time).</li>
+            <li><strong>View</strong> — Colour; Lit colour (shaded by the pressure relief); Speed; Vorticity; Pressure; or Sky reflection.</li>
+            <li><strong>Relief height, Sky L, Record, UI, Canvas size</strong> — as in the first demo.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="demo-section" id="pressure-relief">
+    <div class="demo-header">
+      <h2>Pressure relief</h2>
+      <a href={`${base}/demos/fluid-relief/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/fluid-relief/index.html?embedded`} title="Pressure relief" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        The pressure field is the part of a fluid solver nobody sees. It exists only to keep the flow from piling up: wherever a pen shoves the liquid, pressure rises ahead of the stroke and drops behind it, and its gradient pushes the flow back into balance. Read as a height, it turns into a landscape of ridges and hollows that follows every stroke.
+      </p>
+      <p>
+        This demo strips everything else away. The liquid starts as a plain vertical gradient between two palette colours, and every stroke lays a new palette colour into it. The pressure {"\\( p \\)"} becomes a height {"\\( h \\)"}, the slopes of {"\\( h \\)"} give a surface normal, and a light from the top edge of the frame shades that surface. Ridges catch the light on their upper side and fall into shadow below, so the flat gradient reads as a sheet pressed into relief.
+      </p>
+      <div class="math-block">{"\\[ \\mathbf{n} \\propto \\left(-\\partial_x h,\\; -\\partial_y h,\\; 1\\right), \\qquad \\mathbf{l} = (0,\\; \\cos e,\\; \\sin e) \\]"}</div>
+      <div class="page-note">
+        <strong>Height.</strong> The height is a 3 × 3 blur of the pressure, compressed by {"\\( h = 0.34 \\cdot \\text{Relief height} \\cdot p / (|p| + 220) \\)"} so that the strongest pushes don't become cliffs. The normal comes from central differences 0.006 apart, in frame units with the short side at 1.
+        <br /><br />
+        <strong>Shading.</strong> The colour {"\\( c \\)"} becomes {"\\( c\\,(0.30 + 0.85 \\max(\\mathbf{n}\\cdot\\mathbf{l}, 0)) / (0.30 + 0.85 \\sin e) \\)"}, plus a Blinn–Phong highlight and a faint rim where the surface tilts away from the viewer. Dividing by the value a flat surface would get keeps the untouched gradient at its own colours at every light elevation. Here {"\\( e \\)"} is <em>Light elevation</em>: at 90° the light is straight overhead and both sides of a ridge shade alike; low angles stretch the shadows.
+        <br /><br />
+        <strong>Gradient.</strong> The top colour is the palette's first hue at its lightest step; the bottom colour is the second hue at its darkest. They are blended linearly in linear RGB. A new sheet runs for 1 s before its first frame, not the 3 s of the other two demos, so the gradient is still mostly whole when it appears.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Driver, Pens, Pen speed, Brush, Brush size</strong> — as in the first demo.</li>
+            <li><strong>Pen colour, Ink amount</strong> — as in Colour flow; by default each stroke brings a new palette colour.</li>
+            <li><strong>Palette</strong> — seed for the two gradient colours, the pens' colours and every random choice of the pens; changing it starts a new sheet.</li>
+            <li><strong>Push strength, Viscosity, Vorticity, Grid cells</strong> — as in the first demo. The colour is always carried with MacCormack advection.</li>
+            <li><strong>View</strong> — Lit relief (the gradient shaded by the pressure height), Colour only (the stirred gradient, unlit) or Pressure.</li>
+            <li><strong>Relief height</strong> — height of the pressure relief; at 0 the surface is flat and the gradient shows unshaded.</li>
+            <li><strong>Light elevation</strong> — angle of the light above the surface, which always comes from the top edge of the frame: 90° is straight overhead, low angles rake across the relief.</li>
+            <li><strong>Record, UI, Canvas size</strong> — as in the first demo.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+</PageLayout>

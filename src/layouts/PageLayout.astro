@@ -47,6 +47,13 @@ const navItems: NavItem[] = [
       { label: 'SDF morph',         href: '#sdf-morph' },
     ]
   },
+  { label: 'Watercolour fluid',  href: `${base}/watercolour-fluid`,         slug: 'watercolour-fluid',
+    subLinks: [
+      { label: 'Watercolour drivers', href: '#drivers' },
+      { label: 'Colour flow',         href: '#colour-flow' },
+      { label: 'Pressure relief',     href: '#pressure-relief' },
+    ]
+  },
   // Sketches: dev-only pages, compiled out of production builds.
   ...(import.meta.env.DEV ? [
   ] : []),

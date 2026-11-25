@@ -30,7 +30,8 @@ A collection of small interactive studies in real-time graphics. Each page takes
 │   │   ├── particle-rendering.astro
 │   │   ├── noise-flow.astro
 │   │   ├── environment-maps.astro
-│   │   └── shape-morphing.astro
+│   │   ├── shape-morphing.astro
+│   │   └── watercolour-fluid.astro
 │   ├── content/pages/index.md       ← intro page (placeholder)
 │   └── layouts/PageLayout.astro
 │
@@ -47,10 +48,19 @@ A collection of small interactive studies in real-time graphics. Each page takes
 │   │   ├── env-sky/                     index.html, main.js
 │   │   ├── shape-particles/             index.html, main.js
 │   │   ├── shape-conveyor/              index.html, main.js
-│   │   └── shape-sdf/                   index.html, main.js
+│   │   ├── shape-sdf/                   index.html, main.js
+│   │   ├── watercolour-drivers/         index.html, main.js
+│   │   ├── colour-flow/                 index.html, main.js
+│   │   └── fluid-relief/                index.html, main.js
 │   ├── js/
 │   │   ├── demo-shell.js
 │   │   ├── recorder.js
+│   │   ├── fluid/
+│   │   │   ├── fluid-glsl.js ← solver, splat, MacCormack, pattern and display shaders (GLSL ES 3.00)
+│   │   │   ├── fluid-sim.js  ← FluidSim({ plain }): grids shaped to the canvas, step(), applySplats(), fillPattern(), display()
+│   │   │   ├── fluid-demo.js ← mountFluidDemo(): shell + fixed-step clock + pens, shared by the three fluid demos
+│   │   │   ├── drivers.js    ← DRIVERS (automatic pens), penSplats() brushes, hash()
+│   │   │   └── palette.js    ← seeded OKLCH palette after draw's Palette Maker
 │   │   └── particles/
 │   │       ├── gl.js        ← Program wrapper, mat4, OrbitCamera, GpuTimer, icosphere
 │   │       ├── glsl.js      ← particle uber-shader, ground and inset shaders
@@ -253,6 +263,21 @@ Noise: webgl-noise `snoise(vec3, out grad)` (analytic gradient). `curlNoise(p, t
 ### GPU timing
 
 `GpuTimer` wraps `EXT_disjoint_timer_query_webgl2` (`TIME_ELAPSED_EXT`), polls results non-blockingly and keeps an exponential moving average. Not all browsers expose it; the stats line says so.
+
+---
+
+## Watercolour fluid (`public/js/fluid/`)
+
+Port of math_sketches Fluid IV (`navier-stokes-4`) from Three.js to raw WebGL2, with automatic pens in place of the pointer. Three demos share it through `mountFluidDemo(cfg)` (hooks: `onReset(p, sim) → palette`, `brush(p)`, `fluid(p)`, `view(p)`, `resetOn`, `warmup`): **Watercolour drivers** (watercolour mode), **Colour flow** and **Pressure relief** (both `plain` mode).
+
+- **Solver** (`FluidSim.step`): curl → vorticity confinement → 16 Jacobi viscosity sweeps (implicit) → velocity self-advection (dissipation 0.22) → divergence, pressure ×0.8 warm start, 32 Jacobi sweeps, gradient subtraction → wetness × e^(−k·dt) → paper stain → pigment advection gated by smoothstep(0.02, 0.18, wetness). Free-slip walls, DT = 1/60. Requires `EXT_color_buffer_float`.
+- **Grids**: shaped to the canvas aspect. Domain units have the short side = 1; sim grid = `n` cells per unit (`Grid cells`, default 512 → 910×512 at 16:9), pigment/water/paper at 2n. Velocity in sim cells/s; pen push = 100 · v · force · n/512, viscosity × (n/512)². Formats: velocity RG32F, pressure/divergence R32F (NEAREST); curl, smoothed pressure R16F, water R16F, pigment and paper RGBA16F (LINEAR).
+- **Splats**: batched, up to 48 per pass (`uA` = x, y, vx, vy; `uB` = rgb, radius scale; `uC` = water, pigment amount); three passes per batch: velocity (add, r² = 0.0016·scale), pigment (ordered mix, 0.0009), water (max, 0.0020).
+- **Changes from Fluid IV**: paper stain and displayed pigment are weighted by pigment coverage (`dye.a`), so unpigmented water no longer darkens the paper; paper colour comes from palette entries with L > 0.7; grids follow the canvas instead of cropping a square.
+- **Drivers** (`drivers.js`): pure functions of (seed, pen, driver time) → `null` (pen up) or `{ key, env, at(τ), tap? }`. Pen-down windows from `strokeWindow(P, dLo, dHi)`; random values from `hash(...)`; smooth paths from two-octave quintic value noise. Wander, Scribble, Loops (Fluid IV gusts), Lines, Taps, Handwriting (trochoid rows), Mixed (`DRIVERS.mixed`: per pen, a hashed choice of the other six every 6 s of driver time on a per-pen phase, pen up for the first 0.25 s; key = epoch·100003 + inner key so stroke colours stay distinct). Brushes: Drag, Parallel (5 heads), Splash (4 drops/step), Explode (16 rays every 7 steps).
+- **Plain mode** (`new FluidSim(gl, { plain: true })`, Colour flow): no wetness, paper or drying; splats skip the water pass; the dye is advected everywhere with dissipation 0, by MacCormack (forward, backward with −dt, `φ̂ + ½(φ − φ̃)` clamped to the 4 source texels at the backward trace; two extra targets `dyeFwd`/`dyeBack`) or plain semi-Lagrangian (`Advection`). `fillPattern({ pattern, cols, scale, angle, centre })` fills the dye: 0 stripes, 1 rings, 2 jittered Voronoi cells (size 2.5·scale), 3 stripes displaced by three sines, 4 linear gradient from `cols[0]` to `cols[1]` along `angle` across the whole domain; colours are the 20 palette entries in seeded order, unbrightened (`vivid: false` in `penSplats`). Pens: `colours: 'none'` pushes only, `ink` scales the dye amount. Display `uPlain` shows the dye directly (view 0) and lights it in view 1. Defaults: Loops driver, brush ×1, ink 0.6 per stroke, push ×1, vorticity 6, viscosity 0.02, marbled bands at width 0.07. Reset also on Start pattern and Band width.
+- **Lit view light** (`display(w, h, { lightDir, lightNorm })`, view 1): diffuse 0.30 + 0.85·max(n·l, 0) divided by `lightNorm`, plus Blinn specular (exponent 48, ×0.40) and a Fresnel rim; n from the smoothed pressure height `squash(p, 220)·0.34·Relief`. Defaults keep Fluid IV's key light, normalize(0.45, 0.30, 0.75), and `lightNorm` 0.94. **Pressure relief** (`fluid-relief/`) fills pattern 4 (palette[0], hue 0 lightest, at the top; palette[7], hue 1 darkest, at the bottom), paints a new palette colour per stroke by default (`colours: 'stroke'`, ink 0.6), and lights from the top edge: l = (0, cos e, sin e) with e = Light elevation (default 80°) and `lightNorm` = 0.30 + 0.85 sin e, so flat areas show the gradient unchanged.
+- **Time** (`fluid-demo.js`): `render(t)` steps the sim to `floor(60t)`; the driver clock advances by DT × Pen speed per step. Going back in time, or changing Palette, Grid cells or canvas aspect, starts a fresh sheet painted for 180 warm-up steps (`cfg.warmup` overrides; Pressure relief uses 60). While playing, at most 4 steps per frame (the pens skip ahead beyond that); the recorder (loop paused) is never capped. Verified: frame-by-frame stepping and a single jump give identical pixels.
 
 ---
 
