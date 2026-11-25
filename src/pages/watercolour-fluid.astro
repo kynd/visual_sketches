@@ -15,6 +15,9 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
     <p>
       The second demo keeps the solver and the pens but drops the watercolour. Without paper and water, the colour is no longer pigment sitting on a sheet. It is the liquid itself, filling the whole frame and moving wherever the flow goes.
     </p>
+    <p>
+      The last two demos show the one field a fluid solver hides: pressure, read as the height of a lit surface. The fourth one also zooms into that surface without end. Every demo opens on a random seed, which sets its palette, its pens and the starting value of its controls.
+    </p>
   </div>
 
   <section class="demo-section" id="drivers">
@@ -49,7 +52,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
       <div class="subhead">Pens without a hand</div>
       <p>
-        A driver is a function of time. For each pen it answers two questions: is the pen down, and if so, where is it? Time is cut into periods, and in each one the pen goes down after a short random delay and stays down for a random part of the period. Every random choice comes from hashing the palette seed, the pen and the period number, so a pen's whole life is fixed in advance.
+        A driver is a function of time. For each pen it answers two questions: is the pen down, and if so, where is it? Time is cut into periods, and in each one the pen goes down after a short random delay and stays down for a random part of the period. Every random choice comes from hashing the seed, the pen and the period number, so a pen's whole life is fixed in advance.
       </p>
       <p>
         Between two steps, the pen's movement becomes a stroke segment: splats of water, pigment and momentum along the path, pushing the fluid in the direction the pen travels, as a pointer drag did in the original. The six drivers differ only in their paths. <em>Wander</em> drifts across the frame on smooth noise. <em>Scribble</em> runs tight loops around a slowly drifting centre. <em>Loops</em> are the original's automatic gusts: circles that ramp in and out. <em>Lines</em> are quick, slightly bent strokes along random chords. <em>Taps</em> are single bursts at random spots. <em>Handwriting</em> writes rows of looped strokes from left to right and top to bottom, with gaps between words. <em>Mixed</em> hands each pen a randomly chosen driver from the other six and draws again every few seconds, so different pens move in different ways at once.
@@ -69,7 +72,9 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
         Everything else on this site draws each frame as a pure function of time, and the recorder relies on that to render frames at exact times. A fluid can't jump to a time: it has to step there. So the demo keeps the simulation at a step count, and drawing at time {"\\( t \\)"} first advances it to step {"\\( \\lfloor 60 t \\rfloor \\)"}. Since the pens and brushes are themselves fixed functions of the step, the result depends only on {"\\( t \\)"} and the settings, and a recording replays the same strokes whatever its frame rate.
       </p>
       <div class="page-note">
-        <strong>Fresh sheets.</strong> Going back in time, or changing <em>Palette</em>, <em>Grid cells</em> or the shape of the canvas, starts a new sheet. A new sheet is painted for 3 s before its first frame is shown, so it never opens blank. During playback the simulation advances at most four steps per frame; if a frame takes longer than that, the pens skip ahead rather than slowing the clock. Settings changed mid-run take effect from the next step, so a sheet painted with changes along the way can't be reproduced exactly.
+        <strong>One seed.</strong> Each demo opens on a random seed, or on <code>?seed=N</code> from the URL. The seed fixes the palette, every random choice of the pens and the starting value of each setting: driver, pen count, pen speed, brush, brush size, colours, push strength, viscosity, vorticity and the demo's own controls. The settings are drawn from ranges that suit each demo, as successive hashes of the seed. <em>View</em> and <em>Grid cells</em> are left alone. Entering a seed or picking a random one sets them all again; a setting changed by hand afterwards stays until the seed changes. The seed is shown in the stats label, so a sheet seen once can be called up again.
+        <br /><br />
+        <strong>Fresh sheets.</strong> Going back in time, or changing <em>Seed</em>, <em>Grid cells</em> or the shape of the canvas, starts a new sheet. A new sheet is painted for 3 s before its first frame is shown, so it never opens blank. During playback the simulation advances at most four steps per frame; if a frame takes longer than that, the pens skip ahead rather than slowing the clock. Settings changed mid-run take effect from the next step, so a sheet painted with changes along the way can't be reproduced exactly.
       </div>
       <details>
         <summary>Controls</summary>
@@ -81,7 +86,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Brush</strong> — what a pen lays down: Drag (one stroke), Parallel (five side by side), Splash (drops flung off the pen) or Explode (radial bursts).</li>
             <li><strong>Brush size</strong> — scale of the splats' radius, relative to the original brush.</li>
             <li><strong>Colours</strong> — a new palette colour for every stroke, one colour per pen, or one colour for all pens.</li>
-            <li><strong>Palette</strong> — seed for the five palette hues, the paper colour and every random choice of the pens; changing it starts a new sheet.</li>
+            <li><strong>Seed</strong> — number from 0 to 999999 that sets the five palette hues, the paper colour, every random choice of the pens and the starting value of the other controls (except View and Grid cells); <em>Random</em> picks a new one. Changing it starts a new sheet.</li>
             <li><strong>Push strength</strong> — how hard the pens push the fluid; at 0 they paint without stirring it.</li>
             <li><strong>Viscosity</strong> — how quickly the flow smooths out, in grid cells² per second on a 512-cell grid.</li>
             <li><strong>Vorticity</strong> — strength of the vorticity confinement force, which restores small eddies; 0 keeps strokes solid, higher values swirl them.</li>
@@ -121,7 +126,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
       <div class="page-note">
         <strong>Start patterns.</strong> Positions are in a frame whose short side is 1, and {"\\( w \\)"} is <em>Band width</em>. Stripes are bands {"\\( w \\)"} wide across a seeded direction. Rings are bands of radius around a seeded centre. Cells are a jittered Voronoi diagram with cells about {"\\( 2.5\\,w \\)"} across. Marbled bands are stripes whose coordinate is displaced by three sines of different frequencies. Every region takes one of the 20 palette colours, in a seeded order, at its own lightness: unlike watercolour pigment, the colours are not rescaled to one brightness.
         <br /><br />
-        <strong>Differences from the first demo.</strong> No water, paper or drying, and no gate on the colour's advection. The colour has no dissipation, and its alpha is 1 everywhere. A pen's colour is mixed in with weight {"\\( g \\cdot \\text{Ink amount} \\)"}, where {"\\( g \\)"} is the splat's Gaussian; with <em>Pen colour</em> set to None the pens only push. Vorticity defaults to 6 and viscosity to 0.02, for a livelier flow. MacCormack costs two extra full-resolution passes per step. <em>Start pattern</em> and <em>Band width</em> start a new sheet, as <em>Palette</em> and <em>Grid cells</em> do.
+        <strong>Differences from the first demo.</strong> No water, paper or drying, and no gate on the colour's advection. The colour has no dissipation, and its alpha is 1 everywhere. A pen's colour is mixed in with weight {"\\( g \\cdot \\text{Ink amount} \\)"}, where {"\\( g \\)"} is the splat's Gaussian; with <em>Pen colour</em> set to None the pens only push. Vorticity is drawn from 2 to 14 and viscosity from 0 to 0.06, for a livelier flow. MacCormack costs two extra full-resolution passes per step. <em>Start pattern</em> and <em>Band width</em> start a new sheet, as <em>Seed</em> and <em>Grid cells</em> do.
       </div>
       <details>
         <summary>Controls</summary>
@@ -130,7 +135,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <li><strong>Driver, Pens, Pen speed, Brush, Brush size</strong> — as in the first demo. Here the brush starts at full size.</li>
             <li><strong>Pen colour</strong> — None (the pens only stir), a new palette colour for every stroke, one colour per pen, or one colour for all pens.</li>
             <li><strong>Ink amount</strong> — how strongly a pen's colour replaces the liquid under it, at the centre of a splat.</li>
-            <li><strong>Palette</strong> — seed for the palette, the pattern's colour order, direction and centre, and every random choice of the pens; changing it starts a new sheet.</li>
+            <li><strong>Seed</strong> — as in the first demo; here it also sets the pattern's colour order, direction and centre.</li>
             <li><strong>Start pattern</strong> — the colour layout a new sheet starts from: Stripes, Rings, Cells or Marbled bands.</li>
             <li><strong>Band width</strong> — width of the pattern's bands, with the short side of the frame at 1.</li>
             <li><strong>Push strength, Viscosity, Vorticity, Grid cells</strong> — as in the first demo.</li>
@@ -172,12 +177,50 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
           <ul>
             <li><strong>Driver, Pens, Pen speed, Brush, Brush size</strong> — as in the first demo.</li>
             <li><strong>Pen colour, Ink amount</strong> — as in Colour flow; by default each stroke brings a new palette colour.</li>
-            <li><strong>Palette</strong> — seed for the two gradient colours, the pens' colours and every random choice of the pens; changing it starts a new sheet.</li>
+            <li><strong>Seed</strong> — as in the first demo; here it also picks the two gradient colours.</li>
             <li><strong>Push strength, Viscosity, Vorticity, Grid cells</strong> — as in the first demo. The colour is always carried with MacCormack advection.</li>
             <li><strong>View</strong> — Lit relief (the gradient shaded by the pressure height), Colour only (the stirred gradient, unlit) or Pressure.</li>
             <li><strong>Relief height</strong> — height of the pressure relief; at 0 the surface is flat and the gradient shows unshaded.</li>
             <li><strong>Light elevation</strong> — angle of the light above the surface, which always comes from the top edge of the frame: 90° is straight overhead, low angles rake across the relief.</li>
             <li><strong>Record, UI, Canvas size</strong> — as in the first demo.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="demo-section" id="relief-zoom">
+    <div class="demo-header">
+      <h2>Relief zoom</h2>
+      <a href={`${base}/demos/relief-zoom/index.html`} target="_blank" rel="noopener">open full size ↗</a>
+    </div>
+    <div class="demo-embed">
+      <iframe src={`${base}/demos/relief-zoom/index.html?embedded`} title="Relief zoom" scrolling="no"></iframe>
+    </div>
+    <div class="prose">
+      <p>
+        Pressure relief again, with the camera diving into it. There is no camera to move: the zoom is a second, invisible flow that streams outward from one point at a speed proportional to the distance. Advection, the step that carries velocity and colour along the fluid's own flow, carries them along this one too. The stirred sheet keeps swelling outward from that point, so strokes laid down a few seconds ago become wide bands of colour while the pens keep adding fine new ones.
+      </p>
+      <p>
+        The point drifts. Its position is value noise in time, the same smooth noise that steers the Wander pens, so the dive slowly veers across the sheet instead of heading for one spot.
+      </p>
+      <div class="math-block">{"\\[ \\mathbf{x}_{\\text{back}} = \\mathbf{x} - \\Delta t\\,\\bigl(\\mathbf{v}(\\mathbf{x}) + r\\,(\\mathbf{x} - \\mathbf{c}(t))\\bigr) \\]"}</div>
+      <div class="page-note">
+        <strong>Zoom.</strong> Advection reads each value from the point {"\\( \\mathbf{x}_{\\text{back}} \\)"} the flow came from. Here {"\\( \\mathbf{v} \\)"} is the fluid's velocity, {"\\( r \\)"} the <em>Zoom rate</em> per second and {"\\( \\Delta t = 1/60 \\)"} s. The extra term {"\\( r\\,(\\mathbf{x} - \\mathbf{c}) \\)"} alone samples every map at {"\\( \\mathbf{c} + (\\mathbf{x} - \\mathbf{c})(1 - r\\,\\Delta t) \\)"}, a magnification of about {"\\( e^{r\\,\\Delta t} \\)"} per step, so the sheet doubles in size every {"\\( \\ln 2 / r \\)"} s: 3.5 s at 0.2. The outward flow is never added to the velocity field itself: it diverges everywhere, and the pressure solve would fight it.
+        <br /><br />
+        <strong>Why inside advection.</strong> An earlier version resampled each map about the centre after every step. The velocity and pressure maps are read texel by texel, without interpolation, and magnifying by 1.003 then duplicates one row and one column in every few hundred, always at the same places. The duplicates built up into a grid of horizontal and vertical lines. Inside advection, the zoom is one more offset in a trace that is already interpolated and different at every texel, and the colour keeps MacCormack's sharpening. Velocity keeps its magnitude when it is magnified, so a magnified eddy turns more slowly than the original; scaling the speed up with the size would feed energy into the flow at every step. The pressure is solved afresh every step, so the relief always shows detail at the solver's own scale.
+        <br /><br />
+        <strong>Centre.</strong> Each coordinate of {"\\( \\mathbf{c} \\)"} is {"\\( 0.5 + 1.5 \\cdot \\text{Centre range} \\cdot \\text{fbm}(s \\cdot \\text{Centre speed}) \\)"}, clamped to [0.1, 0.9], where {"\\( s \\)"} is the simulation time in seconds and fbm is two octaves of quintic value noise seeded by the seed. It depends only on the step number, so recordings replay exactly.
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <div class="shape-desc">
+          <ul>
+            <li><strong>Seed, Driver, Pens, Pen speed, Brush, Brush size, Pen colour, Ink amount</strong> — as in Pressure relief.</li>
+            <li><strong>Zoom rate</strong> — growth of the sheet per second, as a natural-log rate: 0 stops the zoom, 0.2 doubles the sheet every 3.5 s, 1 every 0.7 s.</li>
+            <li><strong>Centre range</strong> — how far the zoom centre can stray from the middle of the frame; at 0 it stays in the middle.</li>
+            <li><strong>Centre speed</strong> — how quickly the zoom centre drifts.</li>
+            <li><strong>Push strength, Viscosity, Vorticity, Grid cells, View, Relief height, Light elevation, Record, UI, Canvas size</strong> — as in Pressure relief.</li>
           </ul>
         </div>
       </details>

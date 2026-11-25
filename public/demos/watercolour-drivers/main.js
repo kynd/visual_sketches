@@ -16,6 +16,13 @@ mountFluidDemo({
     paper = light[Math.floor(hash(p.seed, 999) * light.length)].rgb;
     return palette;
   },
+  derive: g => ({
+    size: g.range(0.3, 0.9, 0.05),
+    colours: g.pick(['stroke', 'pen', 'one'], [3, 1.5, 0.5]),
+    viscosity: g.range(0.02, 0.15, 0.01),
+    vorticity: g.r() < 0.6 ? 0 : g.range(2, 10, 1),
+    dry: g.range(0.05, 0.3, 0.01),
+  }),
   brush: p => ({ colours: p.colours }),
   fluid: p => ({ dryRate: p.dry }),
   view: p => ({ view: +p.view, baseColor: paper, relief: p.relief, lLow: p.lLow, lHigh: p.lHigh }),
@@ -27,7 +34,6 @@ mountFluidDemo({
     { id: 'size', label: 'Brush size', type: 'range', min: 0.2, max: 3, step: 0.05, value: 0.5, format: v => `×${v.toFixed(2)}` },
     { id: 'colours', label: 'Colours', type: 'select', value: 'stroke',
       options: [['stroke', 'New per stroke'], ['pen', 'One per pen'], ['one', 'One for all']] },
-    { id: 'seed', label: 'Palette', type: 'range', min: 0, max: 99, step: 1, value: 1 },
     { type: 'group', label: 'Fluid', open: false },
     { id: 'force', label: 'Push strength', type: 'range', min: 0, max: 4, step: 0.05, value: 1, format: v => `×${v.toFixed(2)}` },
     { id: 'viscosity', label: 'Viscosity', type: 'range', min: 0, max: 1, step: 0.01, value: 0.05 },

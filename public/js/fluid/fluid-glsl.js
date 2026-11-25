@@ -27,10 +27,15 @@ out vec4 o;
 // tracing velocity is scaled by how wet the paper is, and a traced sample is
 // blended in by its own pigment coverage so unpainted texels don't drag
 // black into painted ones.
+//
+// uZoomRate adds an outward flow r · (uv − uZoomCentre) to the trace only (it
+// is never part of the velocity field, so projection doesn't see it): over a
+// step the source is sampled at centre + (uv − centre)(1 − r dt), which
+// magnifies it about the centre. 0 for no zoom.
 export const ADVECT = HEAD + /* glsl */`
 uniform sampler2D uVelocity, uSource, uWetness;
-uniform vec2 uVelTexel, uSrcTexel;
-uniform float uDt, uDissipation;
+uniform vec2 uVelTexel, uSrcTexel, uZoomCentre;
+uniform float uDt, uDissipation, uZoomRate;
 uniform int uUseWetness;
 vec4 bilerp(sampler2D s, vec2 uv, vec2 ts) {
   vec2 st = uv / ts - 0.5;
@@ -44,7 +49,7 @@ vec4 bilerp(sampler2D s, vec2 uv, vec2 ts) {
 void main() {
   vec2 vel = bilerp(uVelocity, vUv, uVelTexel).xy;
   if (uUseWetness == 1) vel *= smoothstep(0.02, 0.18, texture(uWetness, vUv).x);
-  vec4 q = bilerp(uSource, vUv - uDt * vel * uVelTexel, uSrcTexel);
+  vec4 q = bilerp(uSource, vUv - uDt * (vel * uVelTexel + uZoomRate * (vUv - uZoomCentre)), uSrcTexel);
   if (uUseWetness == 1) {
     vec4 cur = texture(uSource, vUv);
     q.rgb = mix(cur.rgb, q.rgb, q.a);
@@ -183,11 +188,11 @@ void main() {
 // texels the backward trace lands between, which keeps it stable.
 export const MACCORMACK = HEAD + /* glsl */`
 uniform sampler2D uVelocity, uSource, uForward, uBackward;
-uniform vec2 uVelTexel, uSrcTexel;
-uniform float uDt;
+uniform vec2 uVelTexel, uSrcTexel, uZoomCentre;
+uniform float uDt, uZoomRate;
 void main() {
   vec2 vel = texture(uVelocity, vUv).xy;
-  vec2 st = (vUv - uDt * vel * uVelTexel) / uSrcTexel - 0.5;
+  vec2 st = (vUv - uDt * (vel * uVelTexel + uZoomRate * (vUv - uZoomCentre))) / uSrcTexel - 0.5;
   vec2 i = floor(st);
   vec4 a = texture(uSource, (i + vec2(0.5, 0.5)) * uSrcTexel);
   vec4 b = texture(uSource, (i + vec2(1.5, 0.5)) * uSrcTexel);

@@ -39,6 +39,7 @@ export class FluidSim {
     this.vao = gl.createVertexArray();
     this.targets = [];
     this.simW = this.simH = this.dyeW = this.dyeH = 0;
+    this.zoom = { uZoomRate: 0, uZoomCentre: [0.5, 0.5] };
     this.splatBuf = { A: new Float32Array(4 * G.MAX_SPLATS), B: new Float32Array(4 * G.MAX_SPLATS), C: new Float32Array(4 * G.MAX_SPLATS) };
   }
 
@@ -155,6 +156,15 @@ export class FluidSim {
     });
   }
 
+  // Continuous zoom for the following steps: advection also carries
+  // everything outward from centre (uv) at rate (1/s), magnifying velocity and
+  // dye by about e^(rate·dt) per step. Velocity keeps its magnitude, so
+  // magnified eddies turn more slowly. rate 0 turns it off.
+  setZoom(rate, centre) {
+    this.zoom.uZoomRate = rate;
+    this.zoom.uZoomCentre = centre;
+  }
+
   // One time step. f: { viscosity (texel²/s), vorticity, dryRate (1/s), sharp (plain: MacCormack) }
   step(dt, f) {
     const { p, velocity, pressure, viscTmp, wetness, dye, paper } = this;
@@ -178,7 +188,7 @@ export class FluidSim {
     }
 
     // 3. self-advection (no wetness gate: the air/water flow moves everywhere)
-    this.pass(p.advect, velocity.write, { uTexel: st, uVelTexel: st, uSrcTexel: st, uDt: dt, uDissipation: 0.22, uUseWetness: 0 },
+    this.pass(p.advect, velocity.write, { uTexel: st, uVelTexel: st, uSrcTexel: st, uDt: dt, uDissipation: 0.22, uUseWetness: 0, ...this.zoom },
       { uVelocity: velocity.read, uSource: velocity.read, uWetness: wetness.read });
     velocity.swap();
 
@@ -204,7 +214,7 @@ export class FluidSim {
     paper.swap();
 
     // 7. pigment moves only where the paper is wet
-    this.pass(p.advect, dye.write, { uTexel: dtx, uVelTexel: st, uSrcTexel: dtx, uDt: dt, uDissipation: 0, uUseWetness: 1 },
+    this.pass(p.advect, dye.write, { uTexel: dtx, uVelTexel: st, uSrcTexel: dtx, uDt: dt, uDissipation: 0, uUseWetness: 1, ...this.zoom },
       { uVelocity: velocity.read, uSource: dye.read, uWetness: wetness.read });
     dye.swap();
   }
@@ -214,12 +224,12 @@ export class FluidSim {
     const { p, velocity, dye } = this;
     const st = this.simTexel, dtx = this.dyeTexel;
     const adv = (dst, src, d) => this.pass(p.advect, dst,
-      { uTexel: dtx, uVelTexel: st, uSrcTexel: dtx, uDt: d, uDissipation: 0, uUseWetness: 0 },
+      { uTexel: dtx, uVelTexel: st, uSrcTexel: dtx, uDt: d, uDissipation: 0, uUseWetness: 0, ...this.zoom },
       { uVelocity: velocity.read, uSource: src, uWetness: this.wetness.read });
     if (!sharp) { adv(dye.write, dye.read, dt); dye.swap(); return; }
     adv(this.dyeFwd, dye.read, dt);
     adv(this.dyeBack, this.dyeFwd, -dt);
-    this.pass(p.maccormack, dye.write, { uTexel: dtx, uVelTexel: st, uSrcTexel: dtx, uDt: dt },
+    this.pass(p.maccormack, dye.write, { uTexel: dtx, uVelTexel: st, uSrcTexel: dtx, uDt: dt, ...this.zoom },
       { uVelocity: velocity.read, uSource: dye.read, uForward: this.dyeFwd, uBackward: this.dyeBack });
     dye.swap();
   }

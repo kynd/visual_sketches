@@ -67,8 +67,9 @@ export class Loop {
 }
 
 // ── Parameter panel ──────────────────────────────────────────────────────
-// spec: { id, label, type: 'range'|'select'|'toggle', ...,
+// spec: { id, label, type: 'range'|'select'|'toggle'|'seed', ...,
 //         visible?: values => bool, format?: v => string }
+//   'seed': an integer field 0…max (default 999999) and a Random button.
 //     | { type: 'group', label, open?: bool }  — a collapsible header for the rows after it
 // onLayout() is called when a group opens or closes.
 export function buildPanel(container, specs, onChange, onLayout) {
@@ -126,6 +127,22 @@ export function buildPanel(container, specs, onChange, onLayout) {
       btn.addEventListener('click', () => { values[spec.id] = !values[spec.id]; sync(); api.refresh(); onChange(spec.id, values[spec.id]); });
       sync = () => { btn.classList.toggle('active', !!values[spec.id]); btn.textContent = values[spec.id] ? 'On' : 'Off'; };
       row.appendChild(btn);
+    } else if (spec.type === 'seed') {
+      const max = spec.max ?? 999999;
+      const input = el('input', 'params-num');
+      Object.assign(input, { type: 'number', min: 0, max, step: 1 });
+      input.setAttribute('aria-label', spec.label);
+      const btn = el('button', 'bar-btn params-toggle', 'Random');
+      btn.title = 'Pick a new random seed';
+      const commit = v => { values[spec.id] = v; sync(); api.refresh(); onChange(spec.id, v); };
+      input.addEventListener('change', () => {
+        const v = Math.min(max, Math.max(0, Math.round(+input.value || 0)));
+        if (v === values[spec.id]) { sync(); return; }
+        commit(v);
+      });
+      btn.addEventListener('click', () => commit(Math.floor(Math.random() * (max + 1))));
+      sync = () => { input.value = values[spec.id]; };
+      row.append(input, btn);
     }
     sync();
     rows.push({ spec, row, sync, group });

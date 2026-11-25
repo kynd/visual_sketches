@@ -18,6 +18,15 @@ mountFluidDemo({
     sim.fillPattern({ pattern: 4, cols: [palette[7].rgb, palette[0].rgb], scale: 1, angle: Math.PI / 2, centre: [0, 0] });
     return palette;
   },
+  derive: g => ({
+    size: g.range(0.6, 1.6, 0.05),
+    colours: g.pick(['none', 'stroke', 'pen', 'one'], [0.5, 4, 2, 1]),
+    ink: g.range(0.3, 0.8, 0.05),
+    viscosity: g.range(0, 0.06, 0.01),
+    vorticity: g.range(2, 14, 1),
+    relief: g.range(0.6, 2, 0.05),
+    elev: g.range(40, 85, 1),
+  }),
   brush: p => ({ colours: p.colours, ink: p.ink, vivid: false }),
   fluid: () => ({ sharp: true }),
   view: p => {
@@ -36,7 +45,6 @@ mountFluidDemo({
     { id: 'colours', label: 'Pen colour', type: 'select', value: 'stroke',
       options: [['none', 'None (stir only)'], ['stroke', 'New per stroke'], ['pen', 'One per pen'], ['one', 'One for all']] },
     { id: 'ink', label: 'Ink amount', type: 'range', min: 0.05, max: 1, step: 0.05, value: 0.6, visible: v => v.colours !== 'none' },
-    { id: 'seed', label: 'Palette', type: 'range', min: 0, max: 99, step: 1, value: 1 },
     { type: 'group', label: 'Fluid', open: false },
     { id: 'force', label: 'Push strength', type: 'range', min: 0, max: 4, step: 0.05, value: 1, format: v => `×${v.toFixed(2)}` },
     { id: 'viscosity', label: 'Viscosity', type: 'range', min: 0, max: 1, step: 0.01, value: 0.02 },

@@ -275,3 +275,14 @@ html, body { background: #000; overflow: hidden; }
 }
 .params-group:first-child { border-top: none; }
 .params-group:hover { color: rgba(255,255,255,0.85); }
+
+/* Seed field in the params panel (type 'seed' in demo-shell.js) */
+.params-num {
+  width: 64px; height: 20px; padding: 0 6px; border-radius: var(--r-sq);
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.80); font-family: var(--font-mono); font-size: var(--sz-sm);
+  outline: none; -moz-appearance: textfield;
+}
+.params-num::-webkit-inner-spin-button, .params-num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.params-num:focus { border-color: rgba(255,255,255,0.38); }
+.params-num + .bar-btn { color: rgba(255,255,255,0.70); }

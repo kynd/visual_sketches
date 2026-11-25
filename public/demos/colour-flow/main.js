@@ -24,6 +24,15 @@ mountFluidDemo({
     });
     return palette;
   },
+  derive: g => ({
+    size: g.range(0.6, 1.6, 0.05),
+    colours: g.pick(['none', 'stroke', 'pen', 'one'], [0.5, 4, 2, 1]),
+    ink: g.range(0.3, 0.8, 0.05),
+    pattern: g.pick(['0', '1', '2', '3'], [1, 1, 1, 2]),
+    band: g.range(0.04, 0.15, 0.01),
+    viscosity: g.range(0, 0.06, 0.01),
+    vorticity: g.range(2, 14, 1),
+  }),
   brush: p => ({ colours: p.colours, ink: p.ink, vivid: false }),
   fluid: p => ({ sharp: p.advect === 'mac' }),
   view: p => ({ view: +p.view, relief: p.relief, lLow: p.lLow, lHigh: p.lHigh, baseColor: [0, 0, 0] }),
@@ -36,7 +45,6 @@ mountFluidDemo({
     { id: 'colours', label: 'Pen colour', type: 'select', value: 'stroke',
       options: [['none', 'None (stir only)'], ['stroke', 'New per stroke'], ['pen', 'One per pen'], ['one', 'One for all']] },
     { id: 'ink', label: 'Ink amount', type: 'range', min: 0.05, max: 1, step: 0.05, value: 0.6, visible: v => v.colours !== 'none' },
-    { id: 'seed', label: 'Palette', type: 'range', min: 0, max: 99, step: 1, value: 1 },
     { id: 'pattern', label: 'Start pattern', type: 'select', value: '3', options: PATTERNS },
     { id: 'band', label: 'Band width', type: 'range', min: 0.02, max: 0.3, step: 0.01, value: 0.07 },
     { type: 'group', label: 'Fluid', open: false },

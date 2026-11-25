@@ -22,7 +22,7 @@ function vnoise(seed, salt, x) {
   const a = hash(seed, salt, i) * 2 - 1, b = hash(seed, salt, i + 1) * 2 - 1;
   return a + (b - a) * f * f * f * (f * (f * 6 - 15) + 10);
 }
-const fbm = (seed, salt, x) => (vnoise(seed, salt, x) + 0.5 * vnoise(seed, salt + 101, 2.03 * x + 17.1)) / 1.5;
+export const fbm = (seed, salt, x) => (vnoise(seed, salt, x) + 0.5 * vnoise(seed, salt + 101, 2.03 * x + 17.1)) / 1.5;
 const soft = v => v / Math.sqrt(1 + v * v);                 // squashes any value into (−1, 1)
 const smooth = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
 const ramp = (s, dur, a) => smooth(Math.min(s / a, (dur - s) / a));
